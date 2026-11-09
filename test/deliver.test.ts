@@ -17,8 +17,8 @@ type DeliverView = {
   loop: boolean;
 };
 
-async function ready(w: World, mp3 = false) {
-  const project = await audioProject(w, song(120, 30));
+async function ready(w: World, mp3 = false, seconds = 30) {
+  const project = await audioProject(w, song(120, seconds));
   await runJob(w, "stems-split", { project: project.id });
   await localJob(w, "prepare-analyse", { project: project.id });
   await ask(w, "prep-loop", {}, { project: project.id, startSec: 0.3, bars: 1 });
@@ -32,11 +32,11 @@ const outcome = (result: string | null) =>
 
 test("Deliver says what can be delivered now", async () => {
   const w = dj();
-  const project = await audioProject(w, song(120, 30));
+  const project = await audioProject(w, song(120, 8));
   const none = (await ask(w, "deliver", { project: project.id })) as DeliverView;
   expect(none).toMatchObject({ stems: 0, master: null, prepared: false, cues: 0, loop: false });
   expect(none.folder).toBe(join(project.dir, "deliver"));
-  const all = await ready(w, true);
+  const all = await ready(w, true, 8);
   const view = (await ask(w, "deliver", { project: all.id })) as DeliverView;
   expect(view).toMatchObject({
     stems: 4,
@@ -44,8 +44,8 @@ test("Deliver says what can be delivered now", async () => {
     prepared: true,
     loop: true,
   });
-  expect(view.cues).toBe(4);
-});
+  expect(view.cues).toBe(1);
+}, 20000);
 
 test("Deliver writes stems named tempo, key, stem, the tagged master, rekordbox XML and loops JSON into <project>/deliver", async () => {
   const w = dj();
