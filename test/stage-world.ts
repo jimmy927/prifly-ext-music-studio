@@ -130,7 +130,7 @@ export const ask = (
 
 /** Waits until the job is no longer running. */
 export async function finished(w: World, id: string): Promise<Job> {
-  for (let tries = 0; tries < 400; tries += 1) {
+  for (let tries = 0; tries < 1500; tries += 1) {
     const job = (await ask(w, "job", { id })) as Job;
     if (job.status !== "running") return job;
     await Bun.sleep(5);

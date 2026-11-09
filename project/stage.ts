@@ -51,6 +51,8 @@ export type VersionRecord = {
   /** How many sections were kept, changed, inserted and deleted to make it. */
   counts: Record<Change["kind"], number>;
   created: string;
+  /** ElevenLabs' word timestamps of this version's audio (the Edit stage's karaoke captions); absent on versions made before they were kept. */
+  timestamps?: unknown;
 };
 
 export type Source = { id: string; label: string; file: string };
@@ -74,6 +76,7 @@ function parseVersion(raw: unknown): VersionRecord | null {
       COUNT_KINDS.map((kind) => [kind, typeof counts[kind] === "number" ? counts[kind] : 0]),
     ) as VersionRecord["counts"],
     created: typeof raw["created"] === "string" ? raw["created"] : "",
+    ...(Array.isArray(raw["timestamps"]) ? { timestamps: raw["timestamps"] } : {}),
   };
 }
 
@@ -119,6 +122,7 @@ export async function saveVersion(
     from,
     counts,
     created: new Date().toISOString(),
+    timestamps: Array.isArray(made.timestamps) ? made.timestamps : null,
   };
   await writeFile(join(dir, "versions", `v${n}.json`), json(record));
   await setActive(dir, n);

@@ -11,15 +11,23 @@ export type View =
   | "mix"
   | "master"
   | "prepare"
+  | "treatment"
+  | "storyboard"
+  | "shoot"
+  | "edit"
   | "deliver";
 
-/** The views that work on one project's audio. */
+/** The views that work on one project's audio or video. */
 export const STAGES: readonly View[] = [
   "arrange",
   "produce",
   "mix",
   "master",
   "prepare",
+  "treatment",
+  "storyboard",
+  "shoot",
+  "edit",
   "deliver",
 ];
 export type Notice = { tone: "info" | "warn" | "error"; text: string };

@@ -10,12 +10,17 @@ import { arrangeRoutes } from "./routes/arrange";
 import { bodyOf, entryOf, type Handler, startedAnswer } from "./routes/common";
 import { crateRoutes } from "./routes/crates";
 import { deliverRoutes } from "./routes/deliver";
+import { editRoutes } from "./routes/edit";
 import { type ListItem, libraryRoute, listItem } from "./routes/library";
 import { masterRoutes } from "./routes/master";
 import { media } from "./routes/media";
 import { mixRoutes } from "./routes/mix";
 import { prepareRoutes } from "./routes/prepare";
 import { produceRoutes } from "./routes/produce";
+import { shootRoutes } from "./routes/shoot";
+import { storyboardRoutes } from "./routes/storyboard";
+import { treatmentRoutes } from "./routes/treatment";
+import { tempoOf } from "./routes/video-common";
 import { type Studio, startSketch, statusOf } from "./studio";
 
 /** The routes of the stages after Idea, one file each; a later stage adds its own here. */
@@ -27,6 +32,10 @@ const STAGE_ROUTES: Record<string, Handler> = {
   ...prepareRoutes,
   ...deliverRoutes,
   ...crateRoutes,
+  ...treatmentRoutes,
+  ...storyboardRoutes,
+  ...shootRoutes,
+  ...editRoutes,
 };
 
 async function projectView(studio: Studio, id: unknown) {
@@ -37,6 +46,8 @@ async function projectView(studio: Studio, id: unknown) {
   return {
     ...listItem(entry),
     folder: store.pathOf(entry),
+    /** The tempo Prepare found or was given: the Video stages wait for one. */
+    tempo: await tempoOf(store.pathOf(entry)),
     brief: record?.brief ?? null,
     chosen: record?.chosen ?? entry.chosen,
     sketchList: sketches.map((each) => ({
@@ -71,6 +82,13 @@ export async function route(studio: Studio, request: PanelRequest): Promise<unkn
       if (job === undefined) throw new Error("No such job.");
       return job;
     }
+    case "jobs":
+      // What is running for a project: a reopened page picks the runs up again.
+      return {
+        jobs: [...studio.jobs.values()].filter(
+          (each) => each.status === "running" && each.project === (query["project"] ?? ""),
+        ),
+      };
     case "sketch":
       return await sketch(studio, request);
     case "cancel":

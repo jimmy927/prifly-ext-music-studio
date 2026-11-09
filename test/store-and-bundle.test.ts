@@ -85,6 +85,11 @@ test("activate registers the tools and the panel module answers its routes", asy
     "music_master",
     "music_prepare",
     "music_deliver",
+    "video_treatment",
+    "video_storyboard",
+    "video_shoot",
+    "video_edit",
+    "video_render",
   ]);
   expect(await panel("studio", { path: "library", query: {}, body: null })).toEqual({
     projects: [],

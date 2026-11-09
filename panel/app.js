@@ -372,6 +372,10 @@ var STAGES = [
   "mix",
   "master",
   "prepare",
+  "treatment",
+  "storyboard",
+  "shoot",
+  "edit",
   "deliver"
 ];
 var app = {
@@ -446,24 +450,15 @@ var GROUPS = [
   {
     name: "Video",
     tabs: [
-      { id: "treatment", label: "Treatment", slice: 6 },
-      { id: "storyboard", label: "Storyboard", slice: 6 },
-      { id: "shoot", label: "Shoot", slice: 7 },
-      { id: "edit", label: "Edit", slice: 7 }
+      { id: "treatment", label: "Treatment" },
+      { id: "storyboard", label: "Storyboard" },
+      { id: "shoot", label: "Shoot" },
+      { id: "edit", label: "Edit" }
     ]
   },
   { name: "", tabs: [{ id: "deliver", label: "Deliver" }] }
 ];
 function tab(each) {
-  if (each.slice !== undefined) {
-    return h("button", {
-      type: "button",
-      class: "tab",
-      disabled: true,
-      "aria-disabled": "true",
-      title: `${each.label} comes with the Video stages.`
-    }, each.label);
-  }
   const view = each.id;
   const gated = STAGES.includes(view) ? gate(view) : { enabled: true, reason: null };
   const on = app.view === view;
@@ -478,6 +473,8 @@ function tab(each) {
     onclick: () => go(view)
   }, each.label);
 }
+var NO_TEMPO_REASON = "The video stages need a tempo. Analyse the track on the Prepare stage (or type its BPM in) first.";
+var VIDEO_VIEWS = ["treatment", "storyboard", "shoot", "edit"];
 function gate(view) {
   const project = app.project;
   if (project === null || project.chosen === null)
@@ -487,16 +484,28 @@ function gate(view) {
     if (engine !== "elevenlabs")
       return { enabled: false, reason: LYRIA_REASON };
   }
+  if (VIDEO_VIEWS.includes(view) && project.tempo === null)
+    return { enabled: false, reason: NO_TEMPO_REASON };
   return { enabled: true, reason: null };
 }
 function stageNote() {
   if (app.project === null)
     return "Open a project from the Library to use the stages after Idea.";
-  return gate("arrange").reason ?? "";
+  return gate("arrange").reason ?? gate("treatment").reason ?? "";
+}
+async function refreshProject() {
+  const id = app.project?.id;
+  if (id === undefined)
+    return;
+  try {
+    app.project = await call(`project?id=${encodeURIComponent(id)}`);
+    redraw("head");
+  } catch {}
 }
 function go(view) {
   app.view = view;
   redraw("all");
+  refreshProject();
 }
 function renderStageBar() {
   const library = app.view === "library";
@@ -556,6 +565,13 @@ async function poll(id, after) {
     work.job = null;
   }
   redraw("stage");
+}
+async function follow(job, after) {
+  work.notice = null;
+  work.refusal = null;
+  work.job = job;
+  redraw("stage");
+  await poll(job.id, after);
 }
 async function startWork(path, body, after) {
   work.notice = null;
@@ -919,6 +935,13 @@ async function startLocal(kind, path, body, done) {
   }
   redraw("stage");
 }
+async function followLocal(kind, job, done) {
+  local.notice = null;
+  local.kind = kind;
+  local.job = job;
+  redraw("stage");
+  await poll2(kind, job.id, done);
+}
 async function cancelLocal() {
   if (local.job === null)
     return;
@@ -946,7 +969,12 @@ var STEP_WORDS = {
   stems: "stems written",
   master: "master written",
   rekordbox: "rekordbox written",
-  loops: "loop points written"
+  loops: "loop points written",
+  video: "music video copied",
+  vertical: "vertical cut written",
+  sections: "cut on the beats",
+  described: "described",
+  graph: "edit built"
 };
 function localProgress(kind) {
   const job = local.job;
@@ -1038,6 +1066,20 @@ function rowsOf() {
       detail: "A copy of the analysed audio and a .loops.json beside it",
       available: v?.prepared === true,
       why: "Not analysed yet. Analyse it on the Prepare stage."
+    },
+    {
+      item: "video",
+      title: "Music video",
+      detail: `MP4, H.264, 1080p, the master as sound${v?.video.render?.stale === true ? ". The edit has changed since this render" : ""}`,
+      available: v?.video.render != null,
+      why: "No 1080p render yet. Render 1080p on the Edit stage first."
+    },
+    {
+      item: "vertical",
+      title: "Vertical cut",
+      detail: `9:16, about ${v?.video.verticalSec ?? 30} seconds of the chorus or the range you chose, ${v?.video.captions === true ? "captions on" : "no captions (no sung words)"}, centre crop. Rendered now: you confirm first`,
+      available: (v?.video.clips ?? 0) > 0,
+      why: "No shot has a clip yet. Shoot on the Shoot stage first."
     }
   ];
 }
@@ -1057,16 +1099,13 @@ function itemRow(row) {
   });
   return h("label", { class: `deliver-row${row.available ? "" : " off"}`, "data-item": row.item }, box, h("span", { class: "deliver-text" }, h("span", { class: "card-title" }, row.title), h("span", { class: "meta" }, row.available ? row.detail : row.why)), row.item === "rekordbox" ? crate : null);
 }
-function soonRow(title) {
-  return h("label", { class: "deliver-row off", "data-item": title.toLowerCase().replace(/\s+/g, "-") }, h("input", { type: "checkbox", disabled: true }), h("span", { class: "deliver-text" }, h("span", { class: "card-title" }, title), h("span", { class: "meta" }, "Comes with the Video stages.")));
-}
 function drawRows() {
   const v = view2;
   const keep = crate.value;
   fill(crate, h("option", { value: "" }, "This track"), ...(v?.crates ?? []).map((each) => h("option", { value: each.id }, `Crate: ${each.name} (${each.count})`)));
   if ((v?.crates ?? []).some((each) => each.id === keep))
     crate.value = keep;
-  fill(rows, ...rowsOf().map(itemRow), soonRow("Music video"), soonRow("Vertical cut"));
+  fill(rows, ...rowsOf().map(itemRow));
 }
 function blocker2() {
   if (view2 === null)
@@ -1139,6 +1178,344 @@ function mountDeliver() {
       }
       load2();
       update2();
+    }
+  };
+}
+
+// prep/grid.ts
+var SLOTS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+var LOOP_BARS = [1, 2, 4, 8, 16, 32];
+var BEATS_PER_BAR2 = 4;
+var ms = (value) => Math.round(value * 1000) / 1000;
+var beatSeconds = (grid) => 60 / grid.bpm;
+function beatsBetween(grid, from, to) {
+  const beat = beatSeconds(grid);
+  const out = [];
+  const start = Math.ceil((Math.max(from, 0) - grid.firstBeatSec) / beat - 0.000000001);
+  for (let index = start;; index += 1) {
+    const sec = grid.firstBeatSec + index * beat;
+    if (sec > to)
+      break;
+    const inBar = (index % BEATS_PER_BAR2 + BEATS_PER_BAR2) % BEATS_PER_BAR2;
+    out.push({ sec: ms(sec), bar: Math.floor(index / BEATS_PER_BAR2) + 1, beat: inBar + 1 });
+  }
+  return out;
+}
+var clockText = (sec) => {
+  const whole = Math.max(0, sec);
+  const minutes = Math.floor(whole / 60);
+  return `${minutes}:${(whole - minutes * 60).toFixed(2).padStart(5, "0")}`;
+};
+
+// video/constants.ts
+var MAX_CAST = 6;
+var MAX_TAKES_PER_SHOT = 4;
+var SHOT_BARS = [2, 4, 8];
+var MAX_MEDIA_BYTES = 12 * 1024 * 1024;
+var money = (usd) => `$${usd.toFixed(2)}`;
+
+// panel/src/video.ts
+var usd = money;
+var LOCAL_WORK = ["draft", "preview", "render", "master", "analyse", "deliver"];
+function moneyLine(m) {
+  const share = m === null || m.budgetUsd <= 0 ? 0 : Math.min(1, m.spentUsd / m.budgetUsd);
+  const over = m !== null && m.remainingUsd <= 0;
+  return h("div", { class: `money${over ? " over" : ""}`, "data-part": "money", role: "status" }, h("span", { class: "money-text" }, m === null ? "Budget: loading…" : `${usd(m.spentUsd)} spent of the ${usd(m.budgetUsd)} budget${m.own ? "" : " (the extension's setting)"}, ${usd(m.remainingUsd)} left. Estimates from Google's prices; the bill is Google's.`), h("div", { class: "track", "aria-hidden": "true" }, h("div", { class: "fill", style: `width:${Math.round(share * 100)}%` })));
+}
+var urls = new Map;
+var loading = new Map;
+async function mediaUrl(project, kind, id, key) {
+  const cacheKey = `${project}:${kind}:${id}:${key}`;
+  const known = urls.get(cacheKey);
+  if (known !== undefined)
+    return known;
+  let pending = loading.get(cacheKey);
+  if (pending === undefined) {
+    pending = fetchMedia(project, kind, id).then((media) => {
+      const url = blobUrl(media.base64, media.mime);
+      urls.set(cacheKey, url);
+      return url;
+    });
+    loading.set(cacheKey, pending);
+    pending.finally(() => loading.delete(cacheKey)).catch(() => {
+      return;
+    });
+  }
+  return await pending;
+}
+function picture(project, kind, id, key, alt) {
+  const img = h("img", { alt, class: "pic", loading: "lazy" });
+  const wrap = h("div", { class: "pic-wrap", "data-kind": kind }, img);
+  mediaUrl(project, kind, id, key).then((url) => {
+    img.src = url;
+  }, (caught) => {
+    wrap.classList.add("failed");
+    wrap.title = errorText(caught);
+  });
+  return wrap;
+}
+function clip(project, kind, id, label) {
+  const note = h("span", { class: "player-note", role: "status" });
+  const video = h("video", { controls: true, preload: "none", class: "clip", "aria-label": label });
+  const button = h("button", { type: "button", class: "btn small" }, "Load clip");
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    note.textContent = "Loading…";
+    try {
+      video.src = await mediaUrl(project, kind, id, id);
+      note.textContent = "";
+      button.textContent = "Reload";
+    } catch (caught) {
+      note.textContent = errorText(caught);
+    }
+    button.disabled = false;
+  });
+  return h("div", { class: "clip-box", "data-kind": kind }, video, h("div", { class: "clip-bar" }, button, note));
+}
+async function reattach(kinds, after, done) {
+  const project = app.project;
+  if (project === null || busy() || localBusy())
+    return;
+  try {
+    const answer = await call(`jobs?project=${encodeURIComponent(project.id)}`);
+    const job = answer.jobs.find((each) => kinds.includes(each.work));
+    if (job === undefined)
+      return;
+    if (job.work === "draft" || job.work === "preview" || job.work === "render")
+      followLocal(job.work, job, done);
+    else if (!LOCAL_WORK.includes(job.work))
+      follow(job, after);
+  } catch {}
+}
+function setLabel(button, text) {
+  button.lastChild?.replaceWith(document.createTextNode(text));
+}
+var plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+var keyHint = "No Gemini key. Add it in Settings → Extensions → Music Studio.";
+
+// panel/src/timeline.ts
+var pct = (value, total) => `${Math.round(value / Math.max(total, 0.001) * 1e4) / 100}%`;
+var TRANSITION_WORDS = { cut: "cut", flash: "flash", crossfade: "crossfade" };
+function ruler(view) {
+  const first = view.slots[0];
+  const bars = first === undefined ? 0 : Math.max(1, Math.round(view.totalSec / (view.beatSec * 4)));
+  const every = Math.max(1, Math.ceil(bars / 16));
+  const ticks = [];
+  for (let bar = 1;bar <= bars; bar += every) {
+    ticks.push(h("span", { class: "tick", style: `left:${pct((bar - 1) * view.beatSec * 4, view.totalSec)}` }, String(bar)));
+  }
+  return h("div", { class: "ruler", "aria-label": "Bars" }, ...ticks);
+}
+function block(project, slot, view) {
+  const marks = [
+    slot.number > 1 && slot.transition !== "cut" ? TRANSITION_WORDS[slot.transition] : null,
+    slot.speed === "ramp" ? "ramp 50%" : null
+  ].filter((each) => each !== null);
+  return h("div", {
+    class: `block${slot.hasClip ? "" : " gap"}${slot.transition !== "cut" && slot.number > 1 ? ` t-${slot.transition}` : ""}`,
+    style: `left:${pct(slot.startSec, view.totalSec)};width:${pct(slot.endSec - slot.startSec, view.totalSec)}`,
+    "data-shot": slot.shot,
+    title: `Shot ${slot.number}, ${slot.section}: bar ${slot.startBar}, ${slot.bars} bars${slot.hasClip ? "" : ", no clip: renders black"}`
+  }, slot.frame === null || !slot.hasClip ? null : picture(project, "frame", slot.shot, slot.frame, ""), h("span", { class: "block-label" }, `${slot.number}`), slot.hasClip ? null : h("span", { class: "block-gap" }, "no clip"), marks.length === 0 ? null : h("span", { class: "block-mark" }, marks.join(", ")));
+}
+function captionsLane(view) {
+  const c = view.captions;
+  const text = !c.on ? "Captions off" : c.words === 0 ? "No captions: this song has no sung words" : `Karaoke captions from the word timestamps (${c.words} words)${c.burnable ? "" : ", but this ffmpeg cannot burn them in"}`;
+  return h("div", { class: `lane-band captions${c.on && c.words > 0 ? " on" : ""}` }, text);
+}
+function audioLane(view) {
+  return h("div", { class: `lane-band audio${view.audio === null ? "" : " on"}` }, view.audio === null ? "No soundtrack" : `Soundtrack: ${view.audio.label}. Clip sound is muted.`);
+}
+function drawTimeline(into, project, view) {
+  if (view === null || view.slots.length === 0) {
+    fill(into, h("p", { class: "empty", "data-state": "no-timeline" }, "No timeline yet: draft the shot list on the Storyboard stage."));
+    return;
+  }
+  const width = Math.max(100, Math.round(view.totalSec * 9));
+  fill(into, h("div", { class: "timeline-scroll" }, h("div", { class: "timeline", style: `min-width:${width}px` }, h("div", { class: "lane-name" }, "Bars"), ruler(view), h("div", { class: "lane-name" }, "Video"), h("div", { class: "lane video" }, ...view.slots.map((slot) => block(project, slot, view))), h("div", { class: "lane-name" }, "Captions"), captionsLane(view), h("div", { class: "lane-name" }, "Audio"), audioLane(view))));
+}
+
+// panel/src/edit.ts
+var view3 = null;
+var loadError3 = null;
+var loadedFor3 = null;
+var dirty2 = false;
+var message = null;
+var previewShown = 0;
+var heading3 = h("h2", null);
+var banner2 = h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" });
+var why3 = h("p", { class: "why", role: "status", "data-part": "why" });
+var timelineBox = h("div", { class: "timeline-box", "data-part": "timeline" });
+var shotsBox = h("div", { class: "edit-rows", "data-part": "shots" });
+var warnBox = h("ul", { class: "warnings", "data-part": "warnings", role: "status" });
+var slot2 = h("div", { class: "slot", "data-part": "run-status" });
+var rendersBox = h("div", { class: "renders", "data-part": "renders" });
+var previewBox = h("div", { class: "preview-box", "data-part": "preview" });
+var actionWhy = h("p", { class: "why", role: "status", "data-part": "action-why" });
+var captionsBox = h("input", {
+  type: "checkbox",
+  name: "captions",
+  "aria-label": "Karaoke captions"
+});
+var captionsNote = h("span", { class: "meta" });
+var prepareButton = h("button", { type: "button", class: "btn", id: "open-storyboard", onclick: () => go("storyboard") }, "Open Storyboard");
+var previewButton = h("button", {
+  type: "button",
+  class: "btn primary big",
+  id: "edit-preview",
+  onclick: () => void render2("preview")
+}, icon("play"), "Preview 540p");
+var finalButton = h("button", { type: "button", class: "btn big", id: "edit-render", onclick: () => void render2("render") }, icon("check"), "Render 1080p");
+var cancelButton2 = h("button", { type: "button", class: "btn", id: "edit-cancel", onclick: () => void cancelLocal() }, "Cancel");
+async function load3() {
+  const project = app.project;
+  if (project === null)
+    return;
+  loadedFor3 = project.id;
+  try {
+    view3 = await call(`edit?project=${encodeURIComponent(project.id)}`);
+    loadError3 = null;
+  } catch (caught) {
+    view3 = null;
+    loadError3 = errorText(caught);
+  }
+  dirty2 = true;
+  redraw("stage");
+}
+async function save(body) {
+  const project = app.project;
+  if (project === null)
+    return;
+  message = null;
+  try {
+    view3 = await call("edit-save", { project: project.id, ...body });
+    dirty2 = true;
+  } catch (caught) {
+    message = errorText(caught);
+  }
+  redraw("stage");
+}
+function done(job) {
+  try {
+    const out = JSON.parse(job.result ?? "");
+    const extra = out.warnings.length === 0 ? "" : ` ${out.warnings.join(" ")}`;
+    const name = out.kind === "preview" ? "540p preview" : "1080p video";
+    return `Rendered the ${name}, ${clockText(out.seconds)} long.${extra}`;
+  } catch {
+    return "Rendered.";
+  }
+}
+async function render2(kind) {
+  const project = app.project;
+  if (project === null)
+    return;
+  message = null;
+  await startLocal(kind, kind === "preview" ? "edit-preview" : "edit-render", { project: project.id }, async (job) => {
+    await load3();
+    return done(job);
+  });
+}
+function choice(value, options, label, onChange, disabled) {
+  const select = h("select", { "aria-label": label, disabled }, ...options.map((each) => h("option", { value: each.value }, each.label)));
+  select.value = value;
+  select.addEventListener("change", () => onChange(select.value));
+  return select;
+}
+function shotRow(slotView, locked) {
+  const first = slotView.number === 1;
+  return h("div", { class: `edit-row${slotView.hasClip ? "" : " gap"}`, "data-shot": slotView.shot }, h("span", { class: "card-title" }, `${slotView.number}. ${slotView.section}`), h("span", { class: "meta" }, `bar ${slotView.startBar}, ${slotView.bars} bars`), choice(slotView.transition, [
+    { value: "cut", label: "Cut" },
+    { value: "flash", label: "Flash on the beat" },
+    { value: "crossfade", label: "Crossfade, 1 beat" }
+  ], `Shot ${slotView.number} transition in`, (next) => void save({ shots: { [slotView.shot]: { transition: next } } }), locked || first), choice(slotView.speed, [
+    { value: "normal", label: "Speed 100%" },
+    { value: "ramp", label: "Ramp to 50% at the end" }
+  ], `Shot ${slotView.number} speed`, (next) => void save({ shots: { [slotView.shot]: { speed: next } } }), locked), h("span", { class: `meta${slotView.hasClip ? "" : " error-text"}` }, slotView.hasClip ? "Clip ready" : "No clip: renders black"));
+}
+function renderLine(label, r, folder) {
+  if (r === null)
+    return h("p", { class: "meta", "data-render": label }, `${label}: not rendered yet.`);
+  const where = `${folder}/video/renders/${r.kind}-${r.n}.mp4`;
+  return h("p", { class: "meta", "data-render": label }, `${label}: ${clockText(r.seconds)}, ${r.captions ? "with captions" : "no captions"}${r.gaps > 0 ? `, ${r.gaps} black shot${r.gaps === 1 ? "" : "s"}` : ""}${r.stale ? ". The edit has changed since this was rendered" : ""}. ${where}`);
+}
+function draw() {
+  const project = app.project;
+  if (project === null)
+    return;
+  drawTimeline(timelineBox, project.id, view3);
+  const locked = busy() || localBusy();
+  fill(shotsBox, ...(view3?.slots ?? []).map((each) => shotRow(each, locked)));
+  fill(warnBox, ...(view3?.warnings ?? []).map((each) => h("li", null, icon("alert", 13), each)));
+  const r = view3?.renders;
+  fill(rendersBox, renderLine("540p preview", r?.preview ?? null, project.folder), renderLine("1080p video", r?.final ?? null, project.folder), renderLine("Vertical cut (made on Deliver)", r?.vertical ?? null, project.folder), view3?.vertical == null ? null : h("p", { class: "meta" }, `The vertical cut takes ${view3.vertical.shots} shots, ${clockText(view3.vertical.startSec)} to ${clockText(view3.vertical.endSec)}, 9:16 from the centre of the frame.`));
+  const latest = r?.preview ?? null;
+  fill(previewBox, latest === null ? h("p", { class: "empty", "data-state": "no-preview" }, "No preview yet. Preview 540p renders the cuts, captions and sound on this computer.") : clip(project.id, "preview", String(latest.n), "Preview of the edit"));
+  previewShown = latest?.n ?? 0;
+}
+function blocker3() {
+  if (view3 === null)
+    return loadError3 ?? "Loading…";
+  if (!view3.ffmpeg.ok)
+    return view3.ffmpeg.message;
+  if (view3.tempo === null)
+    return "There is no tempo yet. Analyse the track on the Prepare stage first.";
+  if (view3.slots.length === 0)
+    return "There are no shots yet. Draft the shot list on the Storyboard stage.";
+  if (view3.slots.every((each) => !each.hasClip))
+    return "Nothing is shot yet. Shoot at least one shot on the Shoot stage.";
+  return busy() || localBusy() ? "A run is in progress." : null;
+}
+function captionControls() {
+  const c = view3?.captions;
+  captionsBox.checked = c?.on ?? false;
+  captionsBox.disabled = view3 === null || (c?.words ?? 0) === 0 || busy() || localBusy();
+  if (c === undefined)
+    captionsNote.textContent = "";
+  else if (c.reason !== null)
+    captionsNote.textContent = c.reason;
+  else
+    captionsNote.textContent = c.burnable ? `${c.words} words` : `${c.words} words, but this ffmpeg has no ass filter`;
+}
+function buttons2() {
+  const reason = blocker3();
+  previewButton.disabled = reason !== null;
+  finalButton.disabled = reason !== null;
+  const running = local.job?.status === "running" && (local.job.work === "preview" || local.job.work === "render");
+  cancelButton2.disabled = !running || local.cancelling;
+  cancelButton2.textContent = local.cancelling ? "Cancelling…" : "Cancel";
+  prepareButton.disabled = view3 === null || view3.slots.length > 0;
+  captionControls();
+  banner2.hidden = view3 === null || view3.ffmpeg.ok;
+  fill(banner2, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Rendering needs ffmpeg. "), view3?.ffmpeg.message ?? ""));
+  why3.textContent = "";
+  const estimate = view3 === null ? "" : ` Rendering 1080p takes roughly ${Math.max(1, Math.round(view3.estimate.finalSec / 60))} min here (a guess) and loads the processor; you confirm first.`;
+  actionWhy.textContent = message ?? (local.starting ? "Waiting for you to confirm on the card in prifly…" : reason ?? `Joins with ${view3?.join === "xfade" ? "xfade" : "fade overlays (this ffmpeg has no xfade)"}.${estimate}`);
+}
+function update3() {
+  heading3.textContent = app.project === null ? "Edit" : `Edit — ${app.project.title}`;
+  fill(slot2, localProgress(local.job?.work === "render" ? "render" : "preview"), localNotice(local.kind === "render" ? "render" : "preview"));
+  if (dirty2 || previewShown !== (view3?.renders.preview?.n ?? 0)) {
+    dirty2 = false;
+    draw();
+  }
+  buttons2();
+}
+function mountEdit() {
+  captionsBox.addEventListener("change", () => void save({ captions: captionsBox.checked }));
+  const root = h("div", { class: "stage edit", "data-stage": "edit" }, h("section", { class: "main wide" }, heading3, banner2, why3, timelineBox, h("div", { class: "edit-options" }, h("label", { class: "seg" }, captionsBox, "Karaoke captions"), captionsNote), warnBox, h("div", { class: "actions" }, previewButton, finalButton, cancelButton2, prepareButton), actionWhy, slot2, previewBox, rendersBox, h("h3", null, "Shots"), shotsBox));
+  return {
+    root,
+    update: update3,
+    sync: () => {
+      if (loadedFor3 !== app.project?.id)
+        view3 = null;
+      load3();
+      reattach(["preview", "render"], load3, async (job) => {
+        await load3();
+        return done(job);
+      });
+      dirty2 = true;
+      update3();
     }
   };
 }
@@ -1244,7 +1621,7 @@ async function choose(project, sketch) {
   redraw("idea");
 }
 var cardTitle = (letter, title) => title === null ? `Sketch ${letter}` : `Sketch ${letter} · ${title}`;
-function slot2(id, index) {
+function slot3(id, index) {
   const letter = id.toUpperCase();
   const project = app.project;
   const made = project?.sketchList.find((each) => each.id === id);
@@ -1275,14 +1652,14 @@ function renderSketches(cancel, cancelling) {
   const project = app.project;
   const heading = project === null ? "Sketches" : `Sketches — ${project.title}`;
   const empty = project === null && app.job === null && !app.confirming;
-  return h("section", { class: "side", "data-part": "sketches" }, h("h2", null, heading), progress2(cancel, cancelling), empty ? h("p", { class: "empty" }, "Nothing sketched yet. Write a brief, pick a preset if you like, and press Sketch 3 ideas.") : h("ul", { class: "cards" }, ...SKETCH_IDS.map((id, index) => slot2(id, index))), project === null ? null : h("p", { class: "meta folder" }, `Saved in ${project.folder}`));
+  return h("section", { class: "side", "data-part": "sketches" }, h("h2", null, heading), progress2(cancel, cancelling), empty ? h("p", { class: "empty" }, "Nothing sketched yet. Write a brief, pick a preset if you like, and press Sketch 3 ideas.") : h("ul", { class: "cards" }, ...SKETCH_IDS.map((id, index) => slot3(id, index))), project === null ? null : h("p", { class: "meta folder" }, `Saved in ${project.folder}`));
 }
 
 // panel/src/idea.ts
 var POLL_MS3 = 1500;
 var timer = null;
 var cancelling = false;
-function blocker3() {
+function blocker4() {
   const status = app.status;
   if (status === null)
     return app.statusError === null ? "Loading your keys…" : "Cannot reach the extension.";
@@ -1413,7 +1790,7 @@ function mountIdea() {
   const cost = h("p", { class: "cost" });
   const form = buildForm(() => update());
   function update() {
-    const reason = blocker3();
+    const reason = blocker4();
     button.disabled = reason !== null;
     why.textContent = reason ?? "";
     cost.textContent = app.draft.engine === "elevenlabs" ? "Billed by ElevenLabs to your plan. You confirm first." : "Billed to your Gemini key. You confirm first.";
@@ -1519,7 +1896,7 @@ function crateRow(crate) {
     }
   }, deleting === crate.id ? "Keep" : "Delete"));
 }
-function update3() {
+function update4() {
   const all = app.library.crate === "";
   note.textContent = problem ?? "";
   fill(list, h("li", { class: `crate${all ? " on" : ""}`, "data-crate": "" }, h("button", {
@@ -1535,8 +1912,8 @@ function mountCrates() {
       make();
   });
   const root = h("aside", { class: "side crates", "data-part": "crate-sidebar" }, h("h2", null, "Crates"), list, h("div", { class: "crate-new" }, newName, create), note);
-  update3();
-  return { root, update: update3 };
+  update4();
+  return { root, update: update4 };
 }
 
 // panel/src/library.ts
@@ -1707,26 +2084,26 @@ var clock3 = (seconds) => {
 };
 
 // panel/src/master.ts
-var view3 = null;
-var loadError3 = null;
-var loadedFor3 = null;
+var view4 = null;
+var loadError4 = null;
+var loadedFor4 = null;
 var target = "streaming";
 var format = "wav";
-var dirty2 = false;
+var dirty3 = false;
 var db = (value, unit) => value === null || value === undefined ? "—" : `${value.toFixed(1)} ${unit}`;
-async function load3() {
+async function load4() {
   const project = app.project;
   if (project === null)
     return;
-  loadedFor3 = project.id;
+  loadedFor4 = project.id;
   try {
-    view3 = await call(`master?project=${encodeURIComponent(project.id)}`);
-    loadError3 = null;
+    view4 = await call(`master?project=${encodeURIComponent(project.id)}`);
+    loadError4 = null;
   } catch (caught) {
-    view3 = null;
-    loadError3 = errorText(caught);
+    view4 = null;
+    loadError4 = errorText(caught);
   }
-  dirty2 = true;
+  dirty3 = true;
   redraw("stage");
 }
 var ab = {
@@ -1737,7 +2114,7 @@ var ab = {
   match: true
 };
 var current = () => ab.side === "a" ? ab.source : ab.master;
-var masterOf = (n) => view3?.masters.find((each) => each.n === n);
+var masterOf = (n) => view4?.masters.find((each) => each.n === n);
 function resetDecks() {
   ab.source?.dispose();
   ab.master?.dispose();
@@ -1745,9 +2122,9 @@ function resetDecks() {
   ab.master = null;
   const project = app.project;
   const compared = masterOf(ab.compare);
-  if (project === null || view3 === null || view3.source === null || compared === undefined)
+  if (project === null || view4 === null || view4.source === null || compared === undefined)
     return;
-  ab.source = new Deck(project.id, view3.source.kind, view3.source.id);
+  ab.source = new Deck(project.id, view4.source.kind, view4.source.id);
   ab.master = new Deck(project.id, "master", String(compared.n));
   for (const deck of [ab.source, ab.master]) {
     deck.audio.addEventListener("timeupdate", abTime);
@@ -1758,7 +2135,7 @@ function resetDecks() {
 }
 function applyMatch() {
   const compared = masterOf(ab.compare);
-  const source = view3?.loudness?.integrated;
+  const source = view4?.loudness?.integrated;
   const mastered = compared?.output?.integrated;
   const lowest = source === undefined || mastered === undefined ? null : Math.min(source, mastered);
   const volume = (own) => !ab.match || lowest === null || own === undefined ? 1 : Math.min(1, 10 ** ((lowest - own) / 20));
@@ -1803,12 +2180,12 @@ async function togglePlay() {
   }
   abButtons();
 }
-var heading3 = h("h2", null);
-var slot3 = h("div", { class: "slot", "data-part": "run-status" });
-var banner2 = h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" });
+var heading4 = h("h2", null);
+var slot4 = h("div", { class: "slot", "data-part": "run-status" });
+var banner3 = h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" });
 var facts = h("div", { class: "facts", "data-part": "source-loudness" });
 var lossy = h("p", { class: "why lossy-note", role: "note" });
-var why3 = h("p", { class: "why", role: "status" });
+var why4 = h("p", { class: "why", role: "status" });
 var list2 = h("div", { class: "masters", "data-part": "masters" });
 var note2 = h("span", { class: "player-note", role: "status" });
 var seek = h("input", {
@@ -1825,7 +2202,7 @@ var sideB = h("button", { type: "button", class: "btn toggle", id: "ab-master", 
 var playButton = h("button", { type: "button", class: "btn", id: "ab-play", onclick: () => void togglePlay() }, icon("play", 14), "Play");
 var matchBox = h("input", { type: "checkbox", id: "ab-match", checked: true });
 var masterButton = h("button", { type: "button", class: "btn primary big", id: "master", onclick: () => void run2() }, icon("wave"), "Master");
-var cancelButton2 = h("button", { type: "button", class: "btn", id: "master-cancel", onclick: () => void cancelLocal() }, "Cancel");
+var cancelButton3 = h("button", { type: "button", class: "btn", id: "master-cancel", onclick: () => void cancelLocal() }, "Cancel");
 var targets = h("div", {
   class: "segs",
   role: "radiogroup",
@@ -1876,48 +2253,48 @@ function radios(holder, name, options, picked, pick) {
     });
     input.addEventListener("change", () => {
       pick(option.id);
-      buttons2();
+      buttons3();
     });
     return h("label", { class: "seg" }, input, option.label);
   }));
 }
-function blocker4() {
-  if (view3 === null)
-    return loadError3 ?? "Loading…";
-  if (!view3.ffmpeg.ok)
-    return view3.ffmpeg.message;
-  if (view3.source === null)
+function blocker5() {
+  if (view4 === null)
+    return loadError4 ?? "Loading…";
+  if (!view4.ffmpeg.ok)
+    return view4.ffmpeg.message;
+  if (view4.source === null)
     return "There is nothing to master yet. Choose a sketch on the Idea stage first.";
-  if (view3.loudness === null)
-    return view3.measureError ?? "Measuring the source…";
+  if (view4.loudness === null)
+    return view4.measureError ?? "Measuring the source…";
   return null;
 }
-function buttons2() {
-  const reason = blocker4();
+function buttons3() {
+  const reason = blocker5();
   const busy = localBusy() || local.starting;
   masterButton.disabled = reason !== null || busy;
-  cancelButton2.disabled = !(local.job?.status === "running" && local.job.work === "master") || local.cancelling;
-  cancelButton2.textContent = local.cancelling ? "Cancelling…" : "Cancel";
-  why3.textContent = reason ?? (busy ? "" : "Rendered on this computer with ffmpeg. Free, no confirm.");
-  const bad = view3 !== null && !view3.ffmpeg.ok;
-  banner2.hidden = !bad;
-  fill(banner2, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Mastering needs ffmpeg. "), view3?.ffmpeg.message ?? ""));
-  lossy.textContent = format === "wav" && view3?.source?.lossy === true ? view3.lossyNote : "";
+  cancelButton3.disabled = !(local.job?.status === "running" && local.job.work === "master") || local.cancelling;
+  cancelButton3.textContent = local.cancelling ? "Cancelling…" : "Cancel";
+  why4.textContent = reason ?? (busy ? "" : "Rendered on this computer with ffmpeg. Free, no confirm.");
+  const bad = view4 !== null && !view4.ffmpeg.ok;
+  banner3.hidden = !bad;
+  fill(banner3, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Mastering needs ffmpeg. "), view4?.ffmpeg.message ?? ""));
+  lossy.textContent = format === "wav" && view4?.source?.lossy === true ? view4.lossyNote : "";
 }
 function loudnessTile(label, value) {
   return h("div", { class: "fact" }, h("span", { class: "field-label" }, label), h("span", { class: "big-number" }, value));
 }
 function drawFacts() {
-  const loudness = view3?.loudness ?? null;
-  const measuring = view3 !== null && view3.source !== null && loudness === null && view3.measureError === null;
-  fill(facts, h("div", { class: "fact wide" }, h("span", { class: "field-label" }, "Source"), h("span", null, view3?.source?.label ?? (view3 === null ? "…" : "none"))), loudnessTile("Integrated", measuring ? "Measuring…" : db(loudness?.integrated, "LUFS")), loudnessTile("True peak", measuring ? "…" : db(loudness?.truePeak, "dBTP")), loudnessTile("Loudness range", measuring ? "…" : db(loudness?.range, "LU")));
+  const loudness = view4?.loudness ?? null;
+  const measuring = view4 !== null && view4.source !== null && loudness === null && view4.measureError === null;
+  fill(facts, h("div", { class: "fact wide" }, h("span", { class: "field-label" }, "Source"), h("span", null, view4?.source?.label ?? (view4 === null ? "…" : "none"))), loudnessTile("Integrated", measuring ? "Measuring…" : db(loudness?.integrated, "LUFS")), loudnessTile("True peak", measuring ? "…" : db(loudness?.truePeak, "dBTP")), loudnessTile("Loudness range", measuring ? "…" : db(loudness?.range, "LU")));
 }
 var targetLine = (item) => {
-  const wanted = view3?.targets.find((each) => each.id === item.target);
+  const wanted = view4?.targets.find((each) => each.id === item.target);
   return `${wanted?.label ?? item.target} ${wanted?.lufs ?? ""} LUFS`;
 };
 function drawMasters() {
-  const items = [...view3?.masters ?? []].reverse();
+  const items = [...view4?.masters ?? []].reverse();
   fill(list2, h("h3", null, "Masters"), items.length === 0 ? h("p", { class: "empty", "data-state": "no-masters" }, "Nothing mastered yet. Pick a target and a format, then press Master.") : h("ul", { class: "version-list" }, ...items.map((item) => {
     const radio = h("input", {
       type: "radio",
@@ -1941,55 +2318,55 @@ async function run2() {
   if (project === null)
     return;
   await startLocal("master", "master-render", { project: project.id, target, format }, async () => {
-    await load3();
-    ab.compare = view3?.masters.at(-1)?.n ?? null;
+    await load4();
+    ab.compare = view4?.masters.at(-1)?.n ?? null;
     ab.side = "a";
-    dirty2 = true;
+    dirty3 = true;
     const latest = masterOf(ab.compare);
     return latest === undefined ? "Mastered." : `Made master-${latest.n}.${latest.format}.`;
   });
 }
-function draw() {
-  if (view3 !== null && (ab.compare === null || masterOf(ab.compare) === undefined))
-    ab.compare = view3.masters.at(-1)?.n ?? null;
+function draw2() {
+  if (view4 !== null && (ab.compare === null || masterOf(ab.compare) === undefined))
+    ab.compare = view4.masters.at(-1)?.n ?? null;
   resetDecks();
   drawFacts();
   drawMasters();
-  if (view3 !== null) {
-    radios(targets, "target", view3.targets.map((each) => ({ id: each.id, label: `${each.label}  ${each.lufs} LUFS` })), () => target, (id) => {
+  if (view4 !== null) {
+    radios(targets, "target", view4.targets.map((each) => ({ id: each.id, label: `${each.label}  ${each.lufs} LUFS` })), () => target, (id) => {
       target = id;
     });
-    radios(formats, "format", view3.formats, () => format, (id) => {
+    radios(formats, "format", view4.formats, () => format, (id) => {
       format = id;
     });
   }
   abButtons();
 }
-function update4() {
-  heading3.textContent = app.project === null ? "Master" : `Master — ${app.project.title}`;
-  if (dirty2) {
-    dirty2 = false;
-    draw();
+function update5() {
+  heading4.textContent = app.project === null ? "Master" : `Master — ${app.project.title}`;
+  if (dirty3) {
+    dirty3 = false;
+    draw2();
   }
   drawFacts();
-  buttons2();
-  fill(slot3, localProgress("master"), localNotice("master"));
+  buttons3();
+  fill(slot4, localProgress("master"), localNotice("master"));
 }
 function mountMaster() {
-  const root = h("div", { class: "stage master", "data-stage": "master" }, h("section", { class: "main wide" }, heading3, banner2, facts, h("div", { class: "choice-row" }, h("div", { class: "field" }, h("span", { class: "field-label" }, "Target"), targets), h("div", { class: "field" }, h("span", { class: "field-label" }, "Format"), formats)), lossy, h("div", { class: "actions" }, masterButton, cancelButton2, why3), slot3, list2, h("div", { class: "ab", "data-part": "ab" }, h("h3", null, "A/B against the source"), h("div", { class: "player" }, sideA, sideB, playButton, seek, time, h("label", { class: "check" }, matchBox, "Match loudness")), note2)));
+  const root = h("div", { class: "stage master", "data-stage": "master" }, h("section", { class: "main wide" }, heading4, banner3, facts, h("div", { class: "choice-row" }, h("div", { class: "field" }, h("span", { class: "field-label" }, "Target"), targets), h("div", { class: "field" }, h("span", { class: "field-label" }, "Format"), formats)), lossy, h("div", { class: "actions" }, masterButton, cancelButton3, why4), slot4, list2, h("div", { class: "ab", "data-part": "ab" }, h("h3", null, "A/B against the source"), h("div", { class: "player" }, sideA, sideB, playButton, seek, time, h("label", { class: "check" }, matchBox, "Match loudness")), note2)));
   return {
     root,
-    update: update4,
+    update: update5,
     sync: () => {
-      if (loadedFor3 !== app.project?.id) {
-        view3 = null;
+      if (loadedFor4 !== app.project?.id) {
+        view4 = null;
         ab.compare = null;
       }
       const deck = current();
       deck?.pause();
-      load3();
-      dirty2 = true;
-      update4();
+      load4();
+      dirty3 = true;
+      update5();
     }
   };
 }
@@ -2102,34 +2479,34 @@ class Preview {
 }
 
 // panel/src/mix.ts
-var view4 = null;
-var loadError4 = null;
-var loadedFor4 = null;
-var dirty3 = false;
+var view5 = null;
+var loadError5 = null;
+var loadedFor5 = null;
+var dirty4 = false;
 var mix = {};
 var preview = new Preview;
-async function load4() {
+async function load5() {
   const project = app.project;
   if (project === null)
     return;
-  loadedFor4 = project.id;
+  loadedFor5 = project.id;
   try {
-    view4 = await call(`mix?project=${encodeURIComponent(project.id)}`);
-    mix = Object.fromEntries(view4.tracks.map((each) => [each.key, { ...each.mix }]));
-    loadError4 = null;
+    view5 = await call(`mix?project=${encodeURIComponent(project.id)}`);
+    mix = Object.fromEntries(view5.tracks.map((each) => [each.key, { ...each.mix }]));
+    loadError5 = null;
   } catch (caught) {
-    view4 = null;
-    loadError4 = errorText(caught);
+    view5 = null;
+    loadError5 = errorText(caught);
   }
-  dirty3 = true;
+  dirty4 = true;
   redraw("stage");
 }
 var dbText = (db) => `${db > 0 ? "+" : ""}${db.toFixed(1)} dB`;
 var panText = (pan) => Math.abs(pan) < 0.025 ? "C" : `${pan < 0 ? "L" : "R"}${Math.round(Math.abs(pan) * 100)}`;
-var heading4 = h("h2", null);
-var banner3 = h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" });
+var heading5 = h("h2", null);
+var banner4 = h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" });
 var tracksBox = h("div", { class: "tracks", "data-part": "tracks" });
-var rendersBox = h("div", { class: "renders", "data-part": "renders" });
+var rendersBox2 = h("div", { class: "renders", "data-part": "renders" });
 var status = h("p", { class: "why", role: "status" });
 var previewState = "idle";
 var rendering = false;
@@ -2137,42 +2514,42 @@ var renderNote = null;
 var saveTimer = null;
 var play = h("button", { type: "button", class: "btn", id: "play-preview", onclick: () => void startPreview() }, icon("play", 14), "Play preview");
 var stop = h("button", { type: "button", class: "btn", id: "stop-preview", onclick: () => stopPreview() }, icon("pause", 14), "Stop");
-var render2 = h("button", { type: "button", class: "btn primary big", id: "render-mix", onclick: () => void renderNow() }, icon("wave"), "Render mix");
+var render3 = h("button", { type: "button", class: "btn primary big", id: "render-mix", onclick: () => void renderNow() }, icon("wave"), "Render mix");
 var note3 = h("div", { class: "notices", "data-part": "mix-note" });
-var hasTracks = () => (view4?.tracks.length ?? 0) > 0;
+var hasTracks = () => (view5?.tracks.length ?? 0) > 0;
 function renderBlocker() {
-  if (view4 === null)
-    return loadError4 ?? "Loading the tracks…";
+  if (view5 === null)
+    return loadError5 ?? "Loading the tracks…";
   if (!hasTracks())
     return "There are no stems yet. Split stems on the Produce stage first.";
-  if (!view4.ffmpeg.ok)
-    return view4.ffmpeg.message;
+  if (!view5.ffmpeg.ok)
+    return view5.ffmpeg.message;
   if (rendering)
     return "Rendering…";
   if (audible(Object.values(mix)).length === 0)
     return "Every track is muted, or others are soloed.";
   return null;
 }
-function buttons3() {
+function buttons4() {
   const reason = renderBlocker();
-  render2.disabled = reason !== null || busy();
+  render3.disabled = reason !== null || busy();
   play.disabled = !hasTracks() || previewState !== "idle";
   stop.disabled = previewState !== "playing";
   status.textContent = previewState === "loading" ? "Loading the tracks for the preview…" : reason ?? "";
-  banner3.hidden = view4 === null || view4.ffmpeg.ok;
-  const shown = view4?.ffmpeg.ok === false ? view4.ffmpeg.message : "";
-  fill(banner3, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Mix cannot be rendered. "), shown, " Playing the preview still works."));
+  banner4.hidden = view5 === null || view5.ffmpeg.ok;
+  const shown = view5?.ffmpeg.ok === false ? view5.ffmpeg.message : "";
+  fill(banner4, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Mix cannot be rendered. "), shown, " Playing the preview still works."));
   fill(note3, renderNote === null ? null : h("div", { class: `notice ${renderNote.tone}`, role: "status" }, icon(renderNote.tone === "info" ? "check" : "alert"), h("div", { class: "notice-body" }, renderNote.text)));
 }
 function changed() {
   preview.apply(mix);
   if (saveTimer !== null)
     clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => void save(), 400);
+  saveTimer = setTimeout(() => void save2(), 400);
   dimRows();
-  buttons3();
+  buttons4();
 }
-async function save() {
+async function save2() {
   const project = app.project;
   if (project === null)
     return;
@@ -2180,7 +2557,7 @@ async function save() {
     await call("mix-save", { project: project.id, mix: { tracks: mix } });
   } catch (caught) {
     renderNote = { tone: "error", text: errorText(caught) };
-    buttons3();
+    buttons4();
   }
 }
 function dimRows() {
@@ -2190,28 +2567,28 @@ function dimRows() {
 }
 async function startPreview() {
   const project = app.project;
-  if (project === null || view4 === null)
+  if (project === null || view5 === null)
     return;
   previewState = "loading";
-  buttons3();
+  buttons4();
   try {
-    await preview.load(project.id, view4.tracks, view4.tempo);
+    await preview.load(project.id, view5.tracks, view5.tempo);
     stopPlayers();
     await preview.play(mix, () => {
       previewState = "idle";
-      buttons3();
+      buttons4();
     });
     previewState = "playing";
   } catch (caught) {
     previewState = "idle";
     renderNote = { tone: "error", text: `The preview could not play: ${errorText(caught)}` };
   }
-  buttons3();
+  buttons4();
 }
 function stopPreview() {
   preview.stop();
   previewState = "idle";
-  buttons3();
+  buttons4();
 }
 async function renderNow() {
   const project = app.project;
@@ -2219,7 +2596,7 @@ async function renderNow() {
     return;
   rendering = true;
   renderNote = null;
-  buttons3();
+  buttons4();
   try {
     const answer = await call("mix-render", {
       project: project.id,
@@ -2230,7 +2607,7 @@ async function renderNow() {
     renderNote = { tone: "error", text: errorText(caught) };
   }
   rendering = false;
-  await load4();
+  await load5();
 }
 function row(track) {
   const settings = mix[track.key] ?? { ...DEFAULT_TRACK };
@@ -2279,76 +2656,51 @@ function row(track) {
     }
   }), panOut), toggle("mute", "Mute"), toggle("solo", "Solo"));
 }
-function draw2() {
+function draw3() {
   const project = app.project;
-  if (project === null || view4 === null) {
-    fill(tracksBox, h("p", { class: "empty" }, loadError4 ?? "Open a project from the Library first."));
-    fill(rendersBox);
+  if (project === null || view5 === null) {
+    fill(tracksBox, h("p", { class: "empty" }, loadError5 ?? "Open a project from the Library first."));
+    fill(rendersBox2);
     return;
   }
-  if (view4.tracks.length === 0) {
+  if (view5.tracks.length === 0) {
     fill(tracksBox, h("div", { class: "empty-state", "data-state": "no-stems" }, h("p", null, "No stems yet. Split the song into stems on the Produce stage, then mix them here."), h("button", { type: "button", class: "btn", onclick: () => go("produce") }, "Go to Produce")));
   } else {
-    fill(tracksBox, ...view4.tracks.map(row));
+    fill(tracksBox, ...view5.tracks.map(row));
     dimRows();
   }
-  const list = [...view4.renders].reverse();
-  fill(rendersBox, h("h3", null, "Rendered mixes"), list.length === 0 ? h("p", { class: "empty" }, "No mix rendered yet.") : h("ul", { class: "version-list" }, ...list.map((each) => h("li", { class: "version", "data-mix": String(each.n) }, h("div", { class: "card-title" }, `mix-${each.n}.wav`), player(project.id, String(each.n), "mix", `mix ${each.n}`)))));
+  const list = [...view5.renders].reverse();
+  fill(rendersBox2, h("h3", null, "Rendered mixes"), list.length === 0 ? h("p", { class: "empty" }, "No mix rendered yet.") : h("ul", { class: "version-list" }, ...list.map((each) => h("li", { class: "version", "data-mix": String(each.n) }, h("div", { class: "card-title" }, `mix-${each.n}.wav`), player(project.id, String(each.n), "mix", `mix ${each.n}`)))));
 }
-function update5() {
-  heading4.textContent = app.project === null ? "Mix" : `Mix — ${app.project.title}`;
-  if (dirty3) {
-    dirty3 = false;
-    draw2();
+function update6() {
+  heading5.textContent = app.project === null ? "Mix" : `Mix — ${app.project.title}`;
+  if (dirty4) {
+    dirty4 = false;
+    draw3();
   }
-  buttons3();
+  buttons4();
 }
 function mountMix() {
-  const root = h("div", { class: "stage mix", "data-stage": "mix" }, h("section", { class: "main wide" }, heading4, banner3, tracksBox, h("div", { class: "actions" }, play, stop, render2, h("p", { class: "cost" }, "Rendered on this computer with ffmpeg. Free, no confirm.")), status, note3, rendersBox));
+  const root = h("div", { class: "stage mix", "data-stage": "mix" }, h("section", { class: "main wide" }, heading5, banner4, tracksBox, h("div", { class: "actions" }, play, stop, render3, h("p", { class: "cost" }, "Rendered on this computer with ffmpeg. Free, no confirm.")), status, note3, rendersBox2));
   return {
     root,
-    update: update5,
+    update: update6,
     sync: () => {
-      if (loadedFor4 !== app.project?.id)
-        view4 = null;
+      if (loadedFor5 !== app.project?.id)
+        view5 = null;
       preview.reset();
       previewState = "idle";
-      load4();
-      dirty3 = true;
-      update5();
+      load5();
+      dirty4 = true;
+      update6();
     }
   };
 }
 
-// prep/grid.ts
-var SLOTS = ["A", "B", "C", "D", "E", "F", "G", "H"];
-var LOOP_BARS = [1, 2, 4, 8, 16, 32];
-var BEATS_PER_BAR2 = 4;
-var ms = (value) => Math.round(value * 1000) / 1000;
-var beatSeconds = (grid) => 60 / grid.bpm;
-function beatsBetween(grid, from, to) {
-  const beat = beatSeconds(grid);
-  const out = [];
-  const start = Math.ceil((Math.max(from, 0) - grid.firstBeatSec) / beat - 0.000000001);
-  for (let index = start;; index += 1) {
-    const sec = grid.firstBeatSec + index * beat;
-    if (sec > to)
-      break;
-    const inBar = (index % BEATS_PER_BAR2 + BEATS_PER_BAR2) % BEATS_PER_BAR2;
-    out.push({ sec: ms(sec), bar: Math.floor(index / BEATS_PER_BAR2) + 1, beat: inBar + 1 });
-  }
-  return out;
-}
-var clockText = (sec) => {
-  const whole = Math.max(0, sec);
-  const minutes = Math.floor(whole / 60);
-  return `${minutes}:${(whole - minutes * 60).toFixed(2).padStart(5, "0")}`;
-};
-
 // panel/src/prep-state.ts
 var ps = { view: null, error: null, loadedFor: null, playhead: 0, message: null };
 var prep = () => ps.view?.prep ?? null;
-async function load5() {
+async function load6() {
   const project = app.project;
   if (project === null)
     return;
@@ -2622,12 +2974,12 @@ var ZOOMS = [
 var deck = null;
 var frame = 0;
 var drawnFor = "";
-var heading5 = h("h2", null);
-var banner4 = h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" });
+var heading6 = h("h2", null);
+var banner5 = h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" });
 var stale = h("p", { class: "why", role: "status", "data-part": "stale" });
 var facts2 = h("div", { class: "facts", "data-part": "facts" });
-var why4 = h("p", { class: "why", role: "status" });
-var slot4 = h("div", { class: "slot", "data-part": "run-status" });
+var why5 = h("p", { class: "why", role: "status" });
+var slot5 = h("div", { class: "slot", "data-part": "run-status" });
 var tempoNote = h("p", { class: "why tempo-note", role: "status", "data-part": "tempo-note" });
 var editNote = h("p", { class: "why", role: "status", "data-part": "edit-note" });
 var controls = h("div", { class: "prep-controls" });
@@ -2635,7 +2987,7 @@ var time2 = h("span", { class: "time" }, "0:00.00");
 var playNote = h("span", { class: "player-note", role: "status" });
 var wave = new Waveform((sec) => seek2(sec));
 var analyseButton = h("button", { type: "button", class: "btn primary big", id: "analyse", onclick: () => void analyse() }, icon("wave"), "Analyse");
-var cancelButton3 = h("button", { type: "button", class: "btn", id: "analyse-cancel", onclick: () => void cancelLocal() }, "Cancel");
+var cancelButton4 = h("button", { type: "button", class: "btn", id: "analyse-cancel", onclick: () => void cancelLocal() }, "Cancel");
 var playButton2 = h("button", { type: "button", class: "btn", id: "prep-play", onclick: () => void toggle() }, icon("play", 14), "Play");
 var zoom = h("select", { id: "wave-zoom", "aria-label": "Zoom" }, ...ZOOMS.map((each) => h("option", { value: String(each.span) }, each.label)));
 var scroll = h("input", {
@@ -2679,12 +3031,12 @@ scroll.addEventListener("input", () => {
   const span = zoomSpan();
   wave.setWindow(span, Number(scroll.value) / 1000 * Math.max(0, duration - span));
 });
-function follow() {
+function follow2() {
   const playing = deck;
   if (playing?.playing === true) {
     ps.playhead = playing.audio.currentTime;
     headMoved();
-    frame = requestAnimationFrame(follow);
+    frame = requestAnimationFrame(follow2);
   }
 }
 async function toggle() {
@@ -2695,8 +3047,8 @@ async function toggle() {
   if (deck === null || deck.id !== source.id || deck.kind !== source.kind) {
     deck?.dispose();
     deck = new Deck(project.id, source.kind, source.id);
-    deck.audio.addEventListener("pause", () => buttons4());
-    deck.audio.addEventListener("ended", () => buttons4());
+    deck.audio.addEventListener("pause", () => buttons5());
+    deck.audio.addEventListener("ended", () => buttons5());
   }
   try {
     if (deck.playing)
@@ -2705,13 +3057,13 @@ async function toggle() {
       await deck.play();
       deck.seek(ps.playhead);
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(follow);
+      frame = requestAnimationFrame(follow2);
     }
     playNote.textContent = "";
   } catch (caught) {
     playNote.textContent = caught instanceof Error ? caught.message : String(caught);
   }
-  buttons4();
+  buttons5();
 }
 async function analyse() {
   const project = app.project;
@@ -2720,7 +3072,7 @@ async function analyse() {
   await startLocal("analyse", "prepare-analyse", { project: project.id }, async () => {
     deck?.dispose();
     deck = null;
-    await load5();
+    await load6();
     const found = prep();
     drawnFor = "";
     if (found === null)
@@ -2728,7 +3080,7 @@ async function analyse() {
     return found.analysis.bpm === null ? "Analysed. No clear tempo was found; type a BPM to make a grid." : `Analysed: ${found.grid?.bpm ?? found.analysis.bpm} BPM${found.analysis.key === null ? "" : `, ${found.analysis.key.camelot}`}.`;
   });
 }
-function blocker5() {
+function blocker6() {
   const view = ps.view;
   if (view === null)
     return ps.error ?? "Loading…";
@@ -2738,19 +3090,19 @@ function blocker5() {
     return "There is nothing to analyse yet. Choose a sketch on the Idea stage first.";
   return null;
 }
-function buttons4() {
-  const reason = blocker5();
+function buttons5() {
+  const reason = blocker6();
   const busy = localBusy();
   analyseButton.disabled = reason !== null || busy;
-  cancelButton3.disabled = !(local.job?.status === "running" && local.job.work === "analyse") || local.cancelling;
-  cancelButton3.textContent = local.cancelling ? "Cancelling…" : "Cancel";
+  cancelButton4.disabled = !(local.job?.status === "running" && local.job.work === "analyse") || local.cancelling;
+  cancelButton4.textContent = local.cancelling ? "Cancelling…" : "Cancel";
   playButton2.disabled = prep() === null;
   playButton2.replaceChildren(icon(deck?.playing === true ? "pause" : "play", 14), deck?.playing === true ? "Pause" : "Play");
   zoom.disabled = prep() === null;
   const view = ps.view;
-  why4.textContent = reason ?? (busy ? "" : prep() === null ? "Analysing takes a few seconds and runs on this computer." : "");
-  banner4.hidden = view === null || view.ffmpeg.ok;
-  fill(banner4, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Preparing needs ffmpeg. "), view?.ffmpeg.message ?? ""));
+  why5.textContent = reason ?? (busy ? "" : prep() === null ? "Analysing takes a few seconds and runs on this computer." : "");
+  banner5.hidden = view === null || view.ffmpeg.ok;
+  fill(banner5, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Preparing needs ffmpeg. "), view?.ffmpeg.message ?? ""));
   stale.textContent = view?.stale === true ? `There is a newer ${view.source?.label ?? "file"} than the one analysed. Analyse again to use it.` : "";
 }
 function tile(label, value, sub = "") {
@@ -2789,10 +3141,10 @@ function waveData() {
     loop: found.loop
   };
 }
-function update6() {
-  heading5.textContent = app.project === null ? "Prepare" : `Prepare — ${app.project.title}`;
+function update7() {
+  heading6.textContent = app.project === null ? "Prepare" : `Prepare — ${app.project.title}`;
   drawFacts2();
-  buttons4();
+  buttons5();
   fill(controls, gridControls(), cuesBox(), loopControls(), compatibleRow(), crateControls());
   wave.setData(waveData());
   syncScroll();
@@ -2803,13 +3155,13 @@ function update6() {
     ps.playhead = 0;
     headMoved();
   }
-  fill(slot4, localProgress("analyse"), localNotice("analyse"));
+  fill(slot5, localProgress("analyse"), localNotice("analyse"));
 }
 function mountPrepare() {
-  const root = h("div", { class: "stage prepare", "data-stage": "prepare" }, h("section", { class: "main wide" }, heading5, banner4, h("div", { class: "actions" }, analyseButton, cancelButton3, why4), stale, slot4, facts2, tempoNote, wave.root, h("div", { class: "player wave-bar" }, playButton2, time2, h("span", { class: "grow" }), h("label", { class: "field-inline" }, h("span", { class: "field-label" }, "Zoom"), zoom), scroll), playNote, editNote, controls));
+  const root = h("div", { class: "stage prepare", "data-stage": "prepare" }, h("section", { class: "main wide" }, heading6, banner5, h("div", { class: "actions" }, analyseButton, cancelButton4, why5), stale, slot5, facts2, tempoNote, wave.root, h("div", { class: "player wave-bar" }, playButton2, time2, h("span", { class: "grow" }), h("label", { class: "field-inline" }, h("span", { class: "field-label" }, "Zoom"), zoom), scroll), playNote, editNote, controls));
   return {
     root,
-    update: update6,
+    update: update7,
     sync: () => {
       if (ps.loadedFor !== app.project?.id) {
         ps.view = null;
@@ -2818,53 +3170,53 @@ function mountPrepare() {
         ps.playhead = 0;
       }
       ps.message = null;
-      load5();
-      update6();
+      load6();
+      update7();
     }
   };
 }
 
 // panel/src/produce.ts
-var view5 = null;
-var loadError5 = null;
-var loadedFor5 = null;
-var dirty4 = false;
-async function load6() {
+var view6 = null;
+var loadError6 = null;
+var loadedFor6 = null;
+var dirty5 = false;
+async function load7() {
   const project = app.project;
   if (project === null)
     return;
-  loadedFor5 = project.id;
+  loadedFor6 = project.id;
   try {
-    view5 = await call(`produce?project=${encodeURIComponent(project.id)}`);
-    loadError5 = null;
+    view6 = await call(`produce?project=${encodeURIComponent(project.id)}`);
+    loadError6 = null;
   } catch (caught) {
-    view5 = null;
-    loadError5 = errorText(caught);
+    view6 = null;
+    loadError6 = errorText(caught);
   }
-  dirty4 = true;
+  dirty5 = true;
   redraw("stage");
 }
-function blocker6() {
-  if (view5 === null)
-    return loadError5 ?? "Loading…";
-  if (view5.source === null)
+function blocker7() {
+  if (view6 === null)
+    return loadError6 ?? "Loading…";
+  if (view6.source === null)
     return "Choose a sketch on the Idea stage first.";
   if (app.status !== null && !app.status.elevenlabs.keySet)
     return "No ElevenLabs key. Add it in Settings → Extensions → Music Studio.";
   return busy() ? "A run is in progress." : null;
 }
-var heading6 = h("h2", null);
+var heading7 = h("h2", null);
 var sourceLine = h("p", { class: "meta" });
 var stemsBox = h("div", { class: "lanes", "data-part": "stems" });
 var layersBox = h("div", { class: "lanes", "data-part": "layers" });
 var workSlot2 = h("div", { class: "work-slot" });
 var split = h("button", { type: "button", class: "btn primary", id: "split-stems", onclick: () => void splitStems() }, icon("wave"), "Split stems");
-var why5 = h("p", { class: "why", role: "status" });
+var why6 = h("p", { class: "why", role: "status" });
 var prompt = h("input", {
   type: "text",
   name: "prompt",
   placeholder: "cymbal swell, vinyl crackle, door slam…",
-  oninput: () => buttons5()
+  oninput: () => buttons6()
 });
 var bar = h("input", { type: "number", name: "start-bar", min: 1, step: 1, value: "1" });
 var length = h("input", {
@@ -2874,13 +3226,13 @@ var length = h("input", {
   max: 30,
   step: 0.5,
   value: "3",
-  oninput: () => buttons5()
+  oninput: () => buttons6()
 });
 var loop = h("input", { type: "checkbox", name: "loop" });
 var add = h("button", { type: "button", class: "btn primary", id: "add-sfx", onclick: () => void addLayer() }, icon("spark"), "Add sound effect");
 var addWhy = h("p", { class: "why", role: "status" });
 function addBlocker() {
-  const base = blocker6();
+  const base = blocker7();
   if (base !== null)
     return base;
   if (prompt.value.trim() === "")
@@ -2890,10 +3242,10 @@ function addBlocker() {
     return "A sound effect lasts 0.5 to 30 seconds.";
   return null;
 }
-function buttons5() {
-  const reason = blocker6();
+function buttons6() {
+  const reason = blocker7();
   split.disabled = reason !== null;
-  why5.textContent = reason ?? (view5?.stems.length ? "Splitting again replaces the stems below." : "");
+  why6.textContent = reason ?? (view6?.stems.length ? "Splitting again replaces the stems below." : "");
   const addReason = addBlocker();
   add.disabled = addReason !== null;
   addWhy.textContent = addReason === "Describe the sound first." ? "" : addReason ?? "";
@@ -2904,7 +3256,7 @@ async function splitStems() {
   const project = app.project;
   if (project === null)
     return;
-  await startWork("stems-split", { project: project.id }, load6);
+  await startWork("stems-split", { project: project.id }, load7);
 }
 async function addLayer() {
   const project = app.project;
@@ -2918,14 +3270,14 @@ async function addLayer() {
     loop: loop.checked
   }, async () => {
     prompt.value = "";
-    await load6();
+    await load7();
   });
 }
 async function regenerate(layer) {
   const project = app.project;
   if (project === null)
     return;
-  await startWork("sfx-regenerate", { project: project.id, layer: layer.id }, load6);
+  await startWork("sfx-regenerate", { project: project.id, layer: layer.id }, load7);
 }
 async function remove2(layer) {
   const project = app.project;
@@ -2934,9 +3286,9 @@ async function remove2(layer) {
   try {
     await call("sfx-remove", { project: project.id, layer: layer.id });
   } catch (caught) {
-    loadError5 = errorText(caught);
+    loadError6 = errorText(caught);
   }
-  await load6();
+  await load7();
 }
 function layerRow(project, layer) {
   return h("div", { class: "lane layer", "data-layer": layer.id }, h("div", { class: "lane-head" }, h("span", { class: "lane-name" }, layer.prompt), h("span", { class: "meta" }, `bar ${layer.startBar} · ${layer.lengthSec} s${layer.loop ? " · loop" : ""}`), h("span", { class: "grow" }), h("button", {
@@ -2945,37 +3297,722 @@ function layerRow(project, layer) {
     onclick: () => void regenerate(layer)
   }, "Regenerate"), h("button", { type: "button", class: "btn small layer-action", onclick: () => void remove2(layer) }, "Remove")), player(project, layer.id, "layer", `sound effect ${layer.prompt}`));
 }
-function draw3() {
+function draw4() {
   const project = app.project;
-  if (project === null || view5 === null) {
-    fill(stemsBox, h("p", { class: "empty" }, loadError5 ?? "Open a project from the Library first."));
+  if (project === null || view6 === null) {
+    fill(stemsBox, h("p", { class: "empty" }, loadError6 ?? "Open a project from the Library first."));
     fill(layersBox);
     return;
   }
-  sourceLine.textContent = view5.source === null ? "" : `Working from ${view5.source.label}.${view5.stemSource === null ? "" : ` Stems are from ${view5.stemSource}.`}`;
-  fill(stemsBox, view5.stems.length === 0 ? h("p", { class: "empty" }, "No stems yet. Split stems to separate the song into vocals, drums, bass and the rest.") : null, ...view5.stems.map((each) => h("div", { class: "lane stem", "data-stem": each.name }, h("div", { class: "lane-head" }, h("span", { class: "lane-name" }, each.name)), player(project.id, each.name, "stem", `${each.name} stem`))));
-  fill(layersBox, view5.layers.length === 0 ? h("p", { class: "empty" }, "No sound effects yet.") : null, ...view5.layers.map((each) => layerRow(project.id, each)));
+  sourceLine.textContent = view6.source === null ? "" : `Working from ${view6.source.label}.${view6.stemSource === null ? "" : ` Stems are from ${view6.stemSource}.`}`;
+  fill(stemsBox, view6.stems.length === 0 ? h("p", { class: "empty" }, "No stems yet. Split stems to separate the song into vocals, drums, bass and the rest.") : null, ...view6.stems.map((each) => h("div", { class: "lane stem", "data-stem": each.name }, h("div", { class: "lane-head" }, h("span", { class: "lane-name" }, each.name)), player(project.id, each.name, "stem", `${each.name} stem`))));
+  fill(layersBox, view6.layers.length === 0 ? h("p", { class: "empty" }, "No sound effects yet.") : null, ...view6.layers.map((each) => layerRow(project.id, each)));
 }
-function update7() {
-  heading6.textContent = app.project === null ? "Produce" : `Produce — ${app.project.title}`;
+function update8() {
+  heading7.textContent = app.project === null ? "Produce" : `Produce — ${app.project.title}`;
   fill(workSlot2, renderWork());
-  if (dirty4) {
-    dirty4 = false;
-    draw3();
+  if (dirty5) {
+    dirty5 = false;
+    draw4();
   }
-  buttons5();
+  buttons6();
 }
 function mountProduce() {
-  const root = h("div", { class: "stage produce", "data-stage": "produce" }, h("section", { class: "main wide" }, heading6, sourceLine, h("h3", null, "Stems"), h("div", { class: "actions" }, split, h("p", { class: "cost" }, "Billed by ElevenLabs to your plan. You confirm first.")), why5, stemsBox, h("h3", null, "Sound effects"), h("div", { class: "sfx-form" }, h("label", { class: "field grow" }, h("span", { class: "field-label" }, "Prompt"), prompt), h("label", { class: "field narrow" }, h("span", { class: "field-label" }, "Start bar"), bar), h("label", { class: "field narrow" }, h("span", { class: "field-label" }, "Length (s)"), length), h("label", { class: "check" }, loop, "Loop"), add), addWhy, layersBox, workSlot2));
+  const root = h("div", { class: "stage produce", "data-stage": "produce" }, h("section", { class: "main wide" }, heading7, sourceLine, h("h3", null, "Stems"), h("div", { class: "actions" }, split, h("p", { class: "cost" }, "Billed by ElevenLabs to your plan. You confirm first.")), why6, stemsBox, h("h3", null, "Sound effects"), h("div", { class: "sfx-form" }, h("label", { class: "field grow" }, h("span", { class: "field-label" }, "Prompt"), prompt), h("label", { class: "field narrow" }, h("span", { class: "field-label" }, "Start bar"), bar), h("label", { class: "field narrow" }, h("span", { class: "field-label" }, "Length (s)"), length), h("label", { class: "check" }, loop, "Loop"), add), addWhy, layersBox, workSlot2));
   return {
     root,
-    update: update7,
+    update: update8,
     sync: () => {
-      if (loadedFor5 !== app.project?.id)
-        view5 = null;
-      load6();
-      dirty4 = true;
-      update7();
+      if (loadedFor6 !== app.project?.id)
+        view6 = null;
+      load7();
+      dirty5 = true;
+      update8();
+    }
+  };
+}
+
+// panel/src/shoot.ts
+var view7 = null;
+var loadError7 = null;
+var loadedFor7 = null;
+var dirty6 = false;
+var message2 = null;
+var takes = 1;
+var heading8 = h("h2", null);
+var why7 = h("p", { class: "why", role: "status", "data-part": "why" });
+var moneySlot = h("div", { class: "money-slot" });
+var listBox = h("div", { class: "shots", "data-part": "shots" });
+var workSlot3 = h("div", { class: "work-slot" });
+var takesSelect = h("select", {
+  name: "takes",
+  "aria-label": "Takes per shot",
+  onchange: () => {
+    takes = Number(takesSelect.value);
+    buttons7();
+  }
+}, ...Array.from({ length: MAX_TAKES_PER_SHOT }, (_each, at) => h("option", { value: String(at + 1) }, `${at + 1} take${at === 0 ? "" : "s"} per shot`)));
+var shootButton = h("button", { type: "button", class: "btn primary big", id: "shoot", onclick: () => void shoot(null) }, icon("spark"), "Shoot approved shots");
+var recoverButton = h("button", { type: "button", class: "btn", id: "shoot-recover", onclick: () => void recover() }, "Fetch interrupted clips");
+var actionWhy2 = h("p", { class: "why", role: "status", "data-part": "action-why" });
+async function load8() {
+  const project = app.project;
+  if (project === null)
+    return;
+  loadedFor7 = project.id;
+  try {
+    view7 = await call(`shoot?project=${encodeURIComponent(project.id)}`);
+    loadError7 = null;
+  } catch (caught) {
+    view7 = null;
+    loadError7 = errorText(caught);
+  }
+  dirty6 = true;
+  redraw("stage");
+}
+function outcome(job) {
+  if (job === null || job.status !== "done" || job.work !== "shoot")
+    return;
+  try {
+    const out = JSON.parse(job.result ?? "");
+    const stopped = out.stoppedBy === "budget" ? ` Shooting stopped at the budget (${usd(out.spentUsd)} of ${usd(out.budgetUsd)}): ${out.left} take${out.left === 1 ? " was" : "s were"} not shot. Raise the budget on the Treatment stage to go on.` : "";
+    work.notice = {
+      tone: out.stoppedBy === "budget" || out.failed > 0 ? "warn" : "info",
+      text: `Made ${out.made} take${out.made === 1 ? "" : "s"}${out.failed > 0 ? `, ${out.failed} failed (the reason is on the take)` : ""}.${stopped}`
+    };
+  } catch {}
+}
+async function after() {
+  outcome(work.job);
+  await load8();
+}
+async function shoot(ids) {
+  const project = app.project;
+  if (project === null)
+    return;
+  message2 = null;
+  await startWork("shoot-run", { project: project.id, shots: ids, takes: ids === null ? takes : 1 }, after);
+}
+async function recover() {
+  const project = app.project;
+  if (project === null)
+    return;
+  message2 = null;
+  await startWork("shoot-recover", { project: project.id }, after);
+}
+async function choose2(take) {
+  const project = app.project;
+  if (project === null)
+    return;
+  try {
+    view7 = await call("shoot-choose", { project: project.id, take: take.id });
+    dirty6 = true;
+  } catch (caught) {
+    message2 = errorText(caught);
+  }
+  redraw("stage");
+}
+function takeRow(project, shot, take) {
+  const done = take.status === "done";
+  const select = h("button", {
+    type: "button",
+    class: `btn small${take.chosen ? " on" : ""}`,
+    "aria-pressed": String(take.chosen),
+    disabled: !done || take.chosen || busy(),
+    onclick: () => void choose2(take)
+  }, take.chosen ? "Chosen" : "Choose");
+  const retry = h("button", {
+    type: "button",
+    class: "btn small",
+    disabled: take.status !== "failed" || busy() || !canShoot(shot),
+    onclick: () => void shoot([shot.id])
+  }, "Retry");
+  const status = take.status === "done" ? `${take.seconds} s clip` : take.status === "pending" ? "Waiting for Google" : `Failed: ${take.reason ?? "no reason given"}`;
+  return h("div", { class: `take ${take.status}`, "data-take": take.id }, h("span", { class: "card-title" }, `Take ${take.n}`), h("span", {
+    class: `meta${take.status === "failed" ? " error-text" : ""}`,
+    role: take.status === "failed" ? "alert" : "status"
+  }, status), done ? clip(project, "take", take.id, `Take ${take.n} of shot ${shot.number}`) : null, h("div", { class: "take-actions" }, select, retry));
+}
+var canShoot = (shot) => shot.approved && shot.frame !== null;
+function shotCard(project, shot) {
+  const more = h("button", {
+    type: "button",
+    class: "btn small",
+    disabled: busy() || !canShoot(shot) || !(view7?.geminiKey ?? false),
+    title: canShoot(shot) ? "" : "Approve this shot's frame on the Storyboard stage first.",
+    onclick: () => void shoot([shot.id])
+  }, shot.takes.length === 0 ? "Shoot this shot" : "Another take");
+  return h("article", { class: `shot${shot.approved ? " approved" : ""}`, "data-shot": shot.id }, shot.frame === null ? h("div", { class: "pic-wrap empty-frame" }, h("span", { class: "meta" }, "No frame")) : picture(project, "frame", shot.id, shot.frame, `Frame of shot ${shot.number}`), h("div", { class: "shot-body" }, h("div", { class: "shot-head" }, h("span", { class: "card-title" }, `${shot.number}. ${shot.section}`), h("span", { class: "meta" }, `${clockText(shot.startSec)} to ${clockText(shot.endSec)}, ${shot.clipSeconds} s clip`)), h("p", { class: "shot-text" }, shot.text === "" ? "(no description)" : shot.text), shot.approved ? null : h("p", { class: "meta" }, "Not approved: approve its frame on the Storyboard stage to shoot it."), ...shot.takes.map((take) => takeRow(project, shot, take)), h("div", { class: "shot-actions" }, more)));
+}
+function drawList() {
+  const project = app.project;
+  if (project === null || view7 === null || view7.shots.length === 0) {
+    fill(listBox, h("p", { class: "empty", "data-state": "no-shots" }, "No shot list yet. Draft one on the Storyboard stage."));
+    return;
+  }
+  const shots = view7.shots;
+  fill(listBox, ...shots.map((shot) => shotCard(project.id, shot)));
+}
+function blocker8() {
+  if (view7 === null)
+    return loadError7 ?? "Loading…";
+  if (!view7.geminiKey)
+    return keyHint;
+  if (view7.shots.length === 0)
+    return "There are no shots yet. Draft the shot list on the Storyboard stage.";
+  if (view7.waiting.count === 0)
+    return "Nothing is waiting: approve frames on the Storyboard stage, or use Another take on a shot.";
+  if (view7.money.remainingUsd <= 0)
+    return "The budget is used up. Raise it on the Treatment stage to shoot more.";
+  return busy() ? "A run is in progress." : null;
+}
+function shootButtons(reason) {
+  const count = (view7?.waiting.count ?? 0) * takes;
+  const price = (view7?.waiting.usd ?? 0) * takes;
+  setLabel(shootButton, count === 0 ? "Shoot approved shots" : `Shoot ${plural(count, "take")}, about ${usd(price)}`);
+  shootButton.disabled = reason !== null;
+  takesSelect.value = String(takes);
+  takesSelect.disabled = view7 === null || busy();
+}
+function recoverButtons() {
+  const orphans = view7?.orphans ?? 0;
+  recoverButton.disabled = orphans === 0 || busy() || !(view7?.geminiKey ?? false);
+  setLabel(recoverButton, orphans === 0 ? "Fetch interrupted clips" : `Fetch ${plural(orphans, "interrupted clip")}`);
+}
+function buttons7() {
+  const reason = blocker8();
+  shootButtons(reason);
+  recoverButtons();
+  why7.textContent = view7 !== null && !view7.geminiKey ? keyHint : "";
+  actionWhy2.textContent = message2 ?? reason ?? `Clips are ${view7?.prices.resolution ?? "720p"}, billed to your Gemini key at about ${usd(view7?.prices.videoPerSecondUsd ?? 0)} a second (an estimate). You confirm the batch first; shooting stops at the budget.`;
+}
+function update9() {
+  heading8.textContent = app.project === null ? "Shoot" : `Shoot — ${app.project.title}`;
+  fill(moneySlot, moneyLine(view7?.money ?? null));
+  fill(workSlot3, renderWork());
+  if (dirty6) {
+    dirty6 = false;
+    drawList();
+  }
+  buttons7();
+}
+function mountShoot() {
+  const root = h("div", { class: "stage shoot", "data-stage": "shoot" }, h("section", { class: "main wide" }, heading8, why7, moneySlot, h("div", { class: "actions" }, takesSelect, shootButton, recoverButton), actionWhy2, workSlot3, listBox));
+  return {
+    root,
+    update: update9,
+    sync: () => {
+      if (loadedFor7 !== app.project?.id)
+        view7 = null;
+      load8();
+      reattach(["shoot"], after, async () => "");
+      dirty6 = true;
+      update9();
+    }
+  };
+}
+
+// panel/src/storyboard.ts
+var view8 = null;
+var loadError8 = null;
+var loadedFor8 = null;
+var dirty7 = false;
+var armed = false;
+var message3 = null;
+var heading9 = h("h2", null);
+var why8 = h("p", { class: "why", role: "status", "data-part": "why" });
+var moneySlot2 = h("div", { class: "money-slot" });
+var listBox2 = h("div", { class: "shots", "data-part": "shots" });
+var problemBox = h("p", { class: "why", role: "alert", "data-part": "problems" });
+var workSlot4 = h("div", { class: "work-slot" });
+var localSlot = h("div", { class: "slot", "data-part": "run-status" });
+var prepareButton2 = h("button", { type: "button", class: "btn", id: "open-prepare", onclick: () => go("prepare") }, "Open Prepare");
+var draftButton = h("button", { type: "button", class: "btn primary", id: "draft-shots", onclick: () => void draft2(false) }, icon("spark"), "Draft shot list");
+var keepButton = h("button", {
+  type: "button",
+  class: "btn",
+  id: "draft-keep",
+  onclick: () => {
+    armed = false;
+    buttons8();
+  }
+}, "Keep my list");
+var drawButton = h("button", { type: "button", class: "btn primary", id: "draw-frames", onclick: () => void drawFrames(null) }, icon("spark"), "Draw missing frames");
+var approveAllButton = h("button", {
+  type: "button",
+  class: "btn",
+  id: "approve-all",
+  onclick: () => void change2({ approveAll: true })
+}, "Approve all drawn");
+var cancelButton5 = h("button", { type: "button", class: "btn", id: "draft-cancel", onclick: () => void cancelLocal() }, "Cancel");
+var actionWhy3 = h("p", { class: "why", role: "status", "data-part": "action-why" });
+async function load9() {
+  const project = app.project;
+  if (project === null)
+    return;
+  loadedFor8 = project.id;
+  try {
+    view8 = await call(`storyboard?project=${encodeURIComponent(project.id)}`);
+    loadError8 = null;
+  } catch (caught) {
+    view8 = null;
+    loadError8 = errorText(caught);
+  }
+  dirty7 = true;
+  redraw("stage");
+}
+async function change2(body) {
+  const project = app.project;
+  if (project === null)
+    return;
+  message3 = null;
+  try {
+    const answer = await call("shot-edit", { project: project.id, ...body });
+    if (answer.ok) {
+      view8 = answer.view;
+      dirty7 = true;
+    } else
+      message3 = answer.message;
+  } catch (caught) {
+    message3 = errorText(caught);
+  }
+  redraw("stage");
+}
+async function draft2(replace) {
+  const project = app.project;
+  if (project === null || view8 === null)
+    return;
+  if (view8.hasWork && !replace && !armed) {
+    armed = true;
+    buttons8();
+    return;
+  }
+  armed = false;
+  message3 = null;
+  await startLocal("draft", "storyboard-draft", { project: project.id, replace: view8.hasWork }, async (job) => {
+    await load9();
+    return summary(job);
+  });
+}
+function summary(job) {
+  try {
+    const out = JSON.parse(job.result ?? "");
+    const base = `Cut the song into ${out.shots} shots.`;
+    return out.note === null ? `${base} Descriptions written; edit any of them.` : `${base} ${out.note}`;
+  } catch {
+    return "Done.";
+  }
+}
+async function drawFrames(ids) {
+  const project = app.project;
+  if (project === null)
+    return;
+  await startWork("storyboard-frames", { project: project.id, shots: ids }, async () => {
+    await load9();
+  });
+}
+function splitPoints(shot) {
+  const list = view8?.list;
+  if (list === null || list === undefined)
+    return [];
+  const grid = { bpm: list.bpm, firstBeatSec: list.firstBeatSec };
+  const beat = 60 / list.bpm;
+  return beatsBetween(grid, shot.startSec + beat - 0.001, shot.endSec - beat + 0.001).map((each) => ({
+    sec: each.sec,
+    label: `bar ${each.bar}, beat ${each.beat} (${clockText(each.sec)})`
+  }));
+}
+function textBox(shot) {
+  const box = h("textarea", {
+    rows: 3,
+    "aria-label": `Shot ${shot.number} description`,
+    placeholder: "What the camera sees in this shot.",
+    disabled: busy()
+  });
+  box.value = shot.text;
+  box.addEventListener("change", () => void change2({ shot: shot.id, text: box.value }));
+  return box;
+}
+function frameBox(project, shot) {
+  if (shot.frame === null)
+    return h("div", { class: "pic-wrap empty-frame", "data-state": "no-frame" }, h("span", { class: "meta" }, "No frame yet"));
+  return picture(project, "frame", shot.id, shot.frame, `Frame of shot ${shot.number}`);
+}
+function splitControl(shot) {
+  const points = splitPoints(shot);
+  const select = h("select", {
+    "aria-label": `Split shot ${shot.number} at`,
+    disabled: busy() || points.length === 0
+  });
+  for (const point of points)
+    select.append(h("option", { value: String(point.sec) }, point.label));
+  select.value = String(points[Math.floor(points.length / 2)]?.sec ?? "");
+  const button = h("button", {
+    type: "button",
+    class: "btn small",
+    disabled: busy() || points.length === 0,
+    onclick: () => void change2({ shot: shot.id, splitAt: Number(select.value) })
+  }, "Split here");
+  return h("div", { class: "split" }, select, button);
+}
+function card(project, shot, last) {
+  const blocked = busy() || localBusy();
+  const redraw1 = h("button", {
+    type: "button",
+    class: "btn small",
+    disabled: blocked || !(view8?.geminiKey ?? false) || shot.text.trim() === "",
+    onclick: () => void drawFrames([shot.id])
+  }, shot.frame === null ? "Draw" : "Redraw");
+  const approve = h("button", {
+    type: "button",
+    class: `btn small${shot.approved ? " on" : ""}`,
+    "aria-pressed": String(shot.approved),
+    disabled: blocked || shot.frame === null,
+    onclick: () => void change2({ shot: shot.id, approved: !shot.approved })
+  }, icon("check", 13), shot.approved ? "Approved" : "Approve");
+  const merge = h("button", {
+    type: "button",
+    class: "btn small",
+    disabled: blocked || last,
+    onclick: () => void change2({ shot: shot.id, merge: true })
+  }, "Join with next");
+  return h("article", { class: `shot${shot.approved ? " approved" : ""}`, "data-shot": shot.id }, frameBox(project, shot), h("div", { class: "shot-body" }, h("div", { class: "shot-head" }, h("span", { class: "card-title" }, `${shot.number}. ${shot.section}`), h("span", { class: "meta" }, `${clockText(shot.startSec)} to ${clockText(shot.endSec)}, ${shot.bars} bars, ${shot.clipSeconds} s clip`)), textBox(shot), shot.frameError === null ? null : h("p", { class: "meta error-text", role: "alert" }, `Frame failed: ${shot.frameError}`), h("div", { class: "shot-actions" }, approve, redraw1, merge), splitControl(shot)));
+}
+function drawList2() {
+  const project = app.project;
+  const list = view8?.list;
+  if (project === null || list === null || list === undefined) {
+    fill(listBox2, h("p", { class: "empty", "data-state": "no-shots" }, "No shot list yet. Draft one: the song is cut into shots on the beat, from its sections."));
+    return;
+  }
+  fill(listBox2, ...list.shots.map((shot, at) => card(project.id, shot, at === list.shots.length - 1)));
+}
+function draftBlocker() {
+  if (view8 === null)
+    return loadError8 ?? "Loading…";
+  if (view8.tempo === null)
+    return "There is no tempo yet. Analyse the track on the Prepare stage (or type its BPM in) so the shots can sit on bars.";
+  return busy() || localBusy() ? "A run is in progress." : null;
+}
+function drawBlocker() {
+  if (view8 === null)
+    return loadError8 ?? "Loading…";
+  if (!view8.geminiKey)
+    return keyHint;
+  if (view8.list === null)
+    return "Draft the shot list first.";
+  if (view8.missing.count === 0)
+    return "Every shot has a frame.";
+  const blank = view8.list.shots.find((each) => each.frame === null && each.text.trim() === "");
+  if (blank !== undefined)
+    return `Shot ${blank.number} has no description. Write what it shows first.`;
+  if (view8.missing.usd > view8.money.remainingUsd)
+    return "Over budget: raise the budget on the Treatment stage.";
+  return busy() || localBusy() ? "A run is in progress." : null;
+}
+function draftButtons(reason) {
+  draftButton.disabled = reason !== null;
+  setLabel(draftButton, armed ? "Replace the shot list" : "Draft shot list");
+  keepButton.disabled = !armed;
+  prepareButton2.disabled = view8 === null || view8.tempo !== null;
+  cancelButton5.disabled = !(local.job?.status === "running" && local.job.work === "draft") || local.cancelling;
+  cancelButton5.textContent = local.cancelling ? "Cancelling…" : "Cancel";
+}
+function frameButtons(reason) {
+  const count = view8?.missing.count ?? 0;
+  setLabel(drawButton, count === 0 ? "Draw missing frames" : `Draw ${plural(count, "frame")}, about ${usd(view8?.missing.usd ?? 0)}`);
+  drawButton.disabled = reason !== null;
+  const drawn = view8?.list?.shots.some((each) => each.frame !== null && !each.approved) ?? false;
+  approveAllButton.disabled = !drawn || busy() || localBusy();
+}
+function buttons8() {
+  const draftReason = draftBlocker();
+  const drawReason = drawBlocker();
+  draftButtons(draftReason);
+  frameButtons(drawReason);
+  why8.textContent = view8 !== null && !view8.geminiKey ? keyHint : "";
+  problemBox.textContent = (view8?.problems ?? []).join(" ");
+  actionWhy3.textContent = message3 ?? (armed ? "This replaces the list with its descriptions, frames and approvals. Press the button again to go ahead." : draftReason ?? drawReason ?? "Frames are billed to your Gemini key (an estimate); you confirm the batch first.");
+}
+function update10() {
+  heading9.textContent = app.project === null ? "Storyboard" : `Storyboard — ${app.project.title}`;
+  fill(moneySlot2, moneyLine(view8?.money ?? null));
+  fill(workSlot4, renderWork());
+  fill(localSlot, localProgress("draft"), localNotice("draft"));
+  if (dirty7) {
+    dirty7 = false;
+    drawList2();
+  }
+  buttons8();
+}
+function mountStoryboard() {
+  const root = h("div", { class: "stage storyboard", "data-stage": "storyboard" }, h("section", { class: "main wide" }, heading9, why8, moneySlot2, h("div", { class: "actions" }, draftButton, keepButton, cancelButton5, prepareButton2, drawButton, approveAllButton), actionWhy3, problemBox, localSlot, workSlot4, listBox2));
+  return {
+    root,
+    update: update10,
+    sync: () => {
+      if (loadedFor8 !== app.project?.id) {
+        view8 = null;
+        armed = false;
+      }
+      load9();
+      reattach(["frames", "draft"], load9, async (job) => {
+        await load9();
+        return summary(job);
+      });
+      dirty7 = true;
+      update10();
+    }
+  };
+}
+
+// panel/src/treatment.ts
+var view9 = null;
+var loadError9 = null;
+var loadedFor9 = null;
+var dirty8 = false;
+var redrawCast = false;
+var message4 = null;
+var heading10 = h("h2", null);
+var why9 = h("p", { class: "why", role: "status", "data-part": "why" });
+var moneySlot3 = h("div", { class: "money-slot" });
+var concept = h("textarea", {
+  name: "concept",
+  rows: 4,
+  placeholder: "What the video is about: who, where, what happens.",
+  "aria-label": "Concept"
+});
+var look = h("textarea", {
+  name: "look",
+  rows: 2,
+  placeholder: "The look: film stock, colours, lighting, camera.",
+  "aria-label": "Look"
+});
+var vertical = h("input", { type: "checkbox", name: "vertical" });
+var budget = h("input", {
+  type: "number",
+  name: "budget",
+  min: 0,
+  step: 1,
+  "aria-label": "Budget in dollars"
+});
+var barRadios = SHOT_BARS.map((bars) => h("input", {
+  type: "radio",
+  name: "shot-bars",
+  value: String(bars),
+  "aria-label": `${bars} bars`
+}));
+var save3 = h("button", { type: "button", class: "btn primary", id: "treatment-save", onclick: () => void saveForm() }, icon("check"), "Save treatment");
+var saveWhy = h("p", { class: "why", role: "status" });
+var castBox = h("div", { class: "cast", "data-part": "cast" });
+var fileInput = h("input", {
+  type: "file",
+  accept: "image/png,image/jpeg,image/webp",
+  hidden: true
+});
+var addButton = h("button", { type: "button", class: "btn", id: "cast-add", onclick: () => fileInput.click() }, "Add a picture from a file");
+var drop = h("div", { class: "drop", "data-part": "drop", tabindex: 0 }, "Drop a picture here");
+var castName = h("input", {
+  type: "text",
+  name: "cast-name",
+  placeholder: "Name (Mia, the car…)",
+  "aria-label": "Cast name"
+});
+var castPrompt = h("input", {
+  type: "text",
+  name: "cast-prompt",
+  placeholder: "Describe the person, creature or object to draw",
+  "aria-label": "Cast prompt"
+});
+var drawButton2 = h("button", { type: "button", class: "btn primary", id: "cast-draw", onclick: () => void draw5() }, icon("spark"), "Draw a cast picture");
+var drawWhy = h("p", { class: "why", role: "status" });
+var workSlot5 = h("div", { class: "work-slot" });
+async function load10() {
+  const project = app.project;
+  if (project === null)
+    return;
+  loadedFor9 = project.id;
+  try {
+    view9 = await call(`treatment?project=${encodeURIComponent(project.id)}`);
+    loadError9 = null;
+  } catch (caught) {
+    view9 = null;
+    loadError9 = errorText(caught);
+  }
+  dirty8 = false;
+  redrawCast = true;
+  redraw("stage");
+}
+function setForm() {
+  const t = view9?.treatment;
+  if (t === undefined || dirty8)
+    return;
+  concept.value = t.concept;
+  look.value = t.look;
+  vertical.checked = t.vertical;
+  for (const radio of barRadios)
+    radio.checked = Number(radio.value) === t.shotBars;
+  budget.value = String(view9?.money.budgetUsd ?? "");
+}
+function touched() {
+  dirty8 = true;
+  buttons9();
+}
+async function saveForm() {
+  const project = app.project;
+  if (project === null)
+    return;
+  message4 = null;
+  const bars = barRadios.find((each) => each.checked)?.value;
+  const asked = Number(budget.value);
+  try {
+    view9 = await call("treatment-save", {
+      project: project.id,
+      concept: concept.value,
+      look: look.value,
+      vertical: vertical.checked,
+      shotBars: Number(bars),
+      budgetUsd: budget.value.trim() === "" || !Number.isFinite(asked) ? null : asked
+    });
+    loadError9 = null;
+    dirty8 = false;
+    message4 = "Saved.";
+  } catch (caught) {
+    message4 = errorText(caught);
+  }
+  redraw("stage");
+}
+async function addFile(file) {
+  const project = app.project;
+  if (project === null)
+    return;
+  message4 = null;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (const byte of bytes)
+      binary += String.fromCharCode(byte);
+    const answer = await call("cast-add", {
+      project: project.id,
+      name: file.name.replace(/\.[^.]+$/, ""),
+      base64: btoa(binary)
+    });
+    if (answer.ok) {
+      view9 = answer.view;
+      redrawCast = true;
+    } else
+      message4 = answer.message;
+  } catch (caught) {
+    message4 = errorText(caught);
+  }
+  redraw("stage");
+}
+async function remove3(id) {
+  const project = app.project;
+  if (project === null)
+    return;
+  try {
+    view9 = await call("cast-remove", { project: project.id, id });
+    redrawCast = true;
+  } catch (caught) {
+    message4 = errorText(caught);
+  }
+  redraw("stage");
+}
+async function draw5() {
+  const project = app.project;
+  if (project === null)
+    return;
+  const name = castName.value;
+  await startWork("cast-draw", { project: project.id, name, prompt: castPrompt.value }, async () => {
+    castPrompt.value = "";
+    castName.value = "";
+    await load10();
+  });
+}
+function tile2(project, each) {
+  return h("div", { class: "cast-tile", "data-cast": each.id }, picture(project, "cast", each.id, each.id, each.name === "" ? "Cast picture" : each.name), h("span", { class: "card-title" }, each.name === "" ? "Unnamed" : each.name), h("span", { class: "meta" }, each.source === "generated" ? "Drawn from a prompt" : "From a file"), h("button", {
+    type: "button",
+    class: "btn small",
+    "aria-label": `Remove ${each.name === "" ? "this picture" : each.name}`,
+    disabled: busy(),
+    onclick: () => void remove3(each.id)
+  }, "Remove"));
+}
+function drawCast() {
+  const project = app.project;
+  const cast = view9?.treatment.cast ?? [];
+  fill(castBox, cast.length === 0 || project === null ? h("p", { class: "empty", "data-state": "no-cast" }, "No cast yet. Pictures keep a character looking the same in every shot; the video works without any.") : h("div", { class: "cast-grid" }, ...cast.map((each) => tile2(project.id, each))));
+}
+function drawBlocker2() {
+  if (view9 === null)
+    return loadError9 ?? "Loading…";
+  if (!view9.geminiKey)
+    return keyHint;
+  if (view9.treatment.cast.length >= MAX_CAST)
+    return `The cast holds at most ${MAX_CAST} pictures.`;
+  if (castPrompt.value.trim() === "")
+    return "Describe the picture first.";
+  if (view9.money.remainingUsd < view9.prices.imageUsd)
+    return "Over budget: raise the budget above.";
+  return busy() ? "A run is in progress." : null;
+}
+function buttons9() {
+  const blocked = view9 === null || busy();
+  save3.disabled = blocked || !dirty8;
+  saveWhy.textContent = message4 ?? (dirty8 ? "Unsaved changes." : "");
+  const full = (view9?.treatment.cast.length ?? 0) >= MAX_CAST;
+  addButton.disabled = blocked || full;
+  drop.classList.toggle("off", blocked || full);
+  const reason = drawBlocker2();
+  drawButton2.disabled = reason !== null;
+  drawWhy.textContent = reason ?? `Billed to your Gemini key: about ${usd(view9?.prices.imageUsd ?? 0)} for one picture (an estimate). You confirm first.`;
+  for (const control of [concept, look, vertical, budget, ...barRadios, castName, castPrompt])
+    control.disabled = blocked;
+  const topReason = view9 === null ? loadError9 ?? "Loading…" : !view9.geminiKey ? keyHint : "";
+  why9.textContent = topReason;
+}
+function update11() {
+  heading10.textContent = app.project === null ? "Treatment" : `Treatment — ${app.project.title}`;
+  fill(moneySlot3, moneyLine(view9?.money ?? null));
+  fill(workSlot5, renderWork());
+  setForm();
+  if (redrawCast) {
+    redrawCast = false;
+    drawCast();
+  }
+  buttons9();
+}
+function wire() {
+  for (const control of [concept, look, vertical, budget, ...barRadios])
+    control.addEventListener("input", touched);
+  castPrompt.addEventListener("input", buttons9);
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    fileInput.value = "";
+    if (file !== undefined)
+      addFile(file);
+  });
+  drop.addEventListener("dragover", (event) => event.preventDefault());
+  drop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const file = event.dataTransfer?.files[0];
+    if (file !== undefined && !addButton.disabled)
+      addFile(file);
+  });
+}
+function mountTreatment() {
+  wire();
+  const root = h("div", { class: "stage treatment", "data-stage": "treatment" }, h("section", { class: "main wide" }, heading10, why9, moneySlot3, h("label", { class: "field" }, h("span", { class: "field-label" }, "Concept"), concept), h("label", { class: "field" }, h("span", { class: "field-label" }, "Look"), look), h("div", { class: "format-row", "data-part": "format" }, h("span", { class: "field-label" }, "Format"), h("span", { class: "chip on static" }, "16:9"), h("label", { class: "seg" }, vertical, "Also a 9:16 vertical cut"), h("span", { class: "field-label" }, "Shot length"), ...barRadios.map((radio, at) => h("label", { class: "seg" }, radio, `${SHOT_BARS[at]} bars`)), h("span", { class: "field-label" }, "Budget"), h("label", { class: "seg" }, "$", budget)), h("div", { class: "actions" }, save3, saveWhy), h("h3", null, "Cast"), castBox, h("div", { class: "cast-add" }, addButton, fileInput, drop), h("div", { class: "sfx-form" }, h("label", { class: "field narrow" }, h("span", { class: "field-label" }, "Name"), castName), h("label", { class: "field grow" }, h("span", { class: "field-label" }, "Prompt"), castPrompt), drawButton2), drawWhy, workSlot5));
+  return {
+    root,
+    update: update11,
+    sync: () => {
+      if (loadedFor9 !== app.project?.id)
+        view9 = null;
+      load10();
+      reattach(["cast"], load10, async () => "");
+      update11();
     }
   };
 }
@@ -3019,6 +4056,10 @@ var stages = {
   mix: mountMix(),
   master: mountMaster(),
   prepare: mountPrepare(),
+  treatment: mountTreatment(),
+  storyboard: mountStoryboard(),
+  shoot: mountShoot(),
+  edit: mountEdit(),
   deliver: mountDeliver()
 };
 function stage() {

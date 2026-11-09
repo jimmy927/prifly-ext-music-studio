@@ -22,17 +22,45 @@ import {
 import { Crates } from "./project/crates";
 import { type IndexEntry, libraryFolder, Store } from "./project/store";
 
-export type Deps = { api: () => ExtensionApi | null; fetch: Fetch };
+export type Deps = {
+  api: () => ExtensionApi | null;
+  fetch: Fetch;
+  /** Milliseconds between two polls of a long-running Gemini call; 5000 when left out. */
+  pollMs?: number;
+  /** A smaller frame for every render (tests render at 160x90); the real sizes when left out. */
+  renderSize?: { width: number; height: number };
+};
 
 export const SETTINGS_HINT = "Add it in Settings → Extensions → Music Studio.";
 
 export type JobStatus = "running" | "done" | "failed" | "cancelled";
 
-export type JobKind = "sketch" | "arrange" | "stems" | "sfx" | "master" | "analyse" | "deliver";
+export type JobKind =
+  | "sketch"
+  | "arrange"
+  | "stems"
+  | "sfx"
+  | "cast"
+  | "frames"
+  | "shoot"
+  | "master"
+  | "analyse"
+  | "deliver"
+  | "draft"
+  | "preview"
+  | "render";
+
+const LOCAL_KINDS: readonly JobKind[] = [
+  "master",
+  "analyse",
+  "deliver",
+  "draft",
+  "preview",
+  "render",
+];
 
 /** The kinds that run on this computer: no key, no cost. */
-export const isLocalKind = (kind: JobKind): boolean =>
-  kind === "master" || kind === "analyse" || kind === "deliver";
+export const isLocalKind = (kind: JobKind): boolean => LOCAL_KINDS.includes(kind);
 
 /** A run (paid: sketches, an arrange render, stems, a sound effect; local: master, analyse, deliver), as the panel polls it. */
 export type Job = {
@@ -91,6 +119,11 @@ export class Studio {
 
   libraryPath(): string {
     return libraryFolder(this.api().settings?.["libraryFolder"]);
+  }
+
+  /** How long to wait between two polls of a Gemini call that is still running. */
+  pollMs(): number {
+    return this.deps.pollMs ?? 5000;
   }
 
   /** The stored key for an engine, or null when there is none. */

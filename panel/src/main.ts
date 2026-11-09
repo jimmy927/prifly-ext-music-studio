@@ -7,6 +7,7 @@
 import { mountArrange } from "./arrange";
 import { mountDeliver } from "./deliver";
 import { h } from "./dom";
+import { mountEdit } from "./edit";
 import { loadStatus, renderHeader, renderStageBar } from "./header";
 import { mountIdea } from "./idea";
 import { loadLibrary, mountLibrary } from "./library";
@@ -14,7 +15,10 @@ import { mountMaster } from "./master";
 import { mountMix } from "./mix";
 import { mountPrepare } from "./prepare";
 import { mountProduce } from "./produce";
+import { mountShoot } from "./shoot";
 import { app, onRedraw, STAGES } from "./state";
+import { mountStoryboard } from "./storyboard";
+import { mountTreatment } from "./treatment";
 import { clearWork } from "./work";
 
 const LOOK: Record<string, string> = {
@@ -67,6 +71,10 @@ const stages = {
   mix: mountMix(),
   master: mountMaster(),
   prepare: mountPrepare(),
+  treatment: mountTreatment(),
+  storyboard: mountStoryboard(),
+  shoot: mountShoot(),
+  edit: mountEdit(),
   deliver: mountDeliver(),
 };
 

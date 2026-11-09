@@ -15,6 +15,11 @@ test("both tools are registered under their names", () => {
     "music_master",
     "music_prepare",
     "music_deliver",
+    "video_treatment",
+    "video_storyboard",
+    "video_shoot",
+    "video_edit",
+    "video_render",
   ]);
 });
 

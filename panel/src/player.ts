@@ -17,7 +17,17 @@ export function blobUrl(base64: string, mime: string): string {
   return URL.createObjectURL(new Blob([bytes], { type: mime }));
 }
 
-export type Kind = "sketch" | "version" | "stem" | "layer" | "mix" | "master";
+export type Kind =
+  | "sketch"
+  | "version"
+  | "stem"
+  | "layer"
+  | "mix"
+  | "master"
+  | "cast"
+  | "frame"
+  | "take"
+  | "preview";
 
 /** The file's bytes and type from the extension. */
 export async function fetchMedia(

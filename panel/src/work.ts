@@ -69,6 +69,15 @@ async function poll(id: string, after: () => Promise<void>): Promise<void> {
   redraw("stage");
 }
 
+/** Picks up a run that is already going (the page was reopened meanwhile); `after` runs when it is done. */
+export async function follow(job: Job, after: () => Promise<void>): Promise<void> {
+  work.notice = null;
+  work.refusal = null;
+  work.job = job;
+  redraw("stage");
+  await poll(job.id, after);
+}
+
 /** Posts `body` to `path` (a route that starts a paid run) and follows the job; `after` runs when it is done. */
 export async function startWork(
   path: string,

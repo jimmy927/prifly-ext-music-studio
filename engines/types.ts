@@ -24,6 +24,9 @@ export type EngineErrorKind =
   | "no_key"
   | "auth"
   | "credits"
+  | "billing"
+  | "blocked"
+  | "timeout"
   | "http"
   | "bad_response";
 

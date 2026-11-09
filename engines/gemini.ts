@@ -14,8 +14,15 @@ import {
   type SketchRequest,
 } from "./types";
 
-const URL_INTERACTIONS = "https://generativelanguage.googleapis.com/v1beta/interactions";
-const API_REVISION = "2026-05-20";
+export const URL_INTERACTIONS = "https://generativelanguage.googleapis.com/v1beta/interactions";
+export const API_REVISION = "2026-05-20";
+
+/** The headers every Interactions API call carries. */
+export const geminiHeaders = (key: string): Record<string, string> => ({
+  "x-goog-api-key": key,
+  "api-revision": API_REVISION,
+  "content-type": "application/json",
+});
 
 export type LyriaModel = "lyria-3-clip-preview" | "lyria-3.5";
 
@@ -24,19 +31,62 @@ export function lyriaInput(request: SketchRequest): string {
   return request.instrumental ? `${request.prompt}\nInstrumental only, no vocals.` : request.prompt;
 }
 
-/** The error a Gemini reply that is not 200 stands for. */
-export function errorFrom(status: number, text: string): EngineError {
-  let message = `Gemini answered ${status}.`;
-  try {
-    const body: unknown = JSON.parse(text);
-    const error = isRecord(body) ? body["error"] : null;
-    if (isRecord(error)) message = asString(error["message"]) ?? message;
-  } catch {
-    // Not JSON: the status line says enough.
+/** Error codes with which Google says the project cannot pay: billing off, or the free tier. */
+const BILLING_CODES = new Set(["failed_precondition", "payment_required"]);
+/** Error codes with which Google says a safety or content rule stopped the output. */
+const BLOCKED_CODES = new Set([
+  "safety",
+  "recitation",
+  "language",
+  "prohibited_content",
+  "spii",
+  "blocklist",
+  "image_safety",
+  "image_prohibited_content",
+  "image_recitation",
+  "image_other",
+  "content_blocked",
+  "no_image",
+]);
+
+const BILLING_WORDS = /billing|paid tier|free tier|prepay|credit balance/i;
+
+/** Google's `error` object, `{ code, message }`, from a reply body or an interaction. */
+export function errorFields(body: unknown): { code: string | null; message: string | null } {
+  const error = isRecord(body) ? body["error"] : null;
+  if (!isRecord(error)) return { code: null, message: null };
+  return { code: asString(error["code"]), message: asString(error["message"]) };
+}
+
+/** The error a Gemini failure stands for: an HTTP status with the body, or an interaction's own `error`. */
+export function errorOf(status: number, code: string | null, text: string | null): EngineError {
+  const message = text ?? `Gemini answered ${status}.`;
+  if (code !== null && BLOCKED_CODES.has(code)) return new EngineError("blocked", message);
+  const billing =
+    (code !== null && BILLING_CODES.has(code)) ||
+    status === 402 ||
+    ((status === 400 || status === 403) && BILLING_WORDS.test(message));
+  if (billing) {
+    return new EngineError(
+      "billing",
+      `This Gemini key cannot pay for the call: video and image generation need a paid tier (billing turned on) in Google AI Studio. Google says: ${message}`,
+    );
   }
   if (status === 401 || status === 403) return new EngineError("auth", message);
   if (status === 429) return new EngineError("credits", message);
   return new EngineError("http", message);
+}
+
+/** The error a Gemini reply that is not 200 stands for. */
+export function errorFrom(status: number, text: string): EngineError {
+  let body: unknown = null;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // Not JSON: the status line says enough.
+  }
+  const { code, message } = errorFields(body);
+  return errorOf(status, code, message);
 }
 
 /** The content blocks of an answer's `model_output` steps, in order. */
@@ -76,11 +126,7 @@ export async function lyria(
 ): Promise<Sketched> {
   const response = await fetchFn(URL_INTERACTIONS, {
     method: "POST",
-    headers: {
-      "x-goog-api-key": key,
-      "api-revision": API_REVISION,
-      "content-type": "application/json",
-    },
+    headers: geminiHeaders(key),
     body: JSON.stringify({ model, input: lyriaInput(request) }),
     ...(signal === undefined ? {} : { signal }),
   });

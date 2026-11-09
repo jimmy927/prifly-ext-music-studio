@@ -8,6 +8,10 @@ This is slice 1: the foundation and the Idea stage.
 - **Sketch 3 ideas** shows one confirm card with the estimated cost, then makes three sketches you can play and mark as chosen.
 - **Session tools**: `music_sketch` (paid, confirm card first) and `music_library` (read-only list with file paths).
 
+## Video stages
+
+Treatment (concept, look, cast, budget), Storyboard (shot list on the beatgrid, frames), Shoot (clips with Gemini Omni Flash, takes, budget stop), Edit (timeline in bars, transitions, speed ramps, karaoke captions, 540p preview, 1080p render) and Deliver's music video and 9:16 vertical cut. They need a tempo from Prepare and a Gemini key on a paid tier. Dollar figures are estimates from Google's price page (`video/constants.ts`). Session tools: `video_treatment`, `video_storyboard`, `video_shoot`, `video_edit`, `video_render` (`mode: "plan"` writes a job folder with the ffmpeg argv for a rented box). Shots are at most 15 seconds, the longest Omni clip, so each shot is one call.
+
 ## Setup
 
 1. Link this folder into `~/.local/share/prifly/extensions/music-studio` and enable Music Studio in Settings → Extensions.

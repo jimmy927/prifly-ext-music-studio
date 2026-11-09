@@ -5,6 +5,21 @@ import type { CrateItem } from "../../routes/crates";
 import type { Job, Status } from "../../studio";
 
 export type {
+  CastView,
+  EditView,
+  JobsView,
+  MoneyView,
+  RenderOutcome,
+  RenderView,
+  ShootShot,
+  ShootView,
+  ShotView,
+  SlotView,
+  StoryboardView,
+  TakeView,
+  TreatmentView,
+} from "../../routes/video-views";
+export type {
   ArrangeView,
   DeliverOutcome,
   DeliverView,

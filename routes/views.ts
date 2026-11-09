@@ -121,6 +121,15 @@ export type DeliverView = {
   prepared: boolean;
   cues: number;
   loop: boolean;
+  video: {
+    /** The newest 1080p render; `stale` when the edit has changed since. */
+    render: { n: number; seconds: number; stale: boolean } | null;
+    /** Shots with a clip: the vertical cut needs some. */
+    clips: number;
+    verticalSec: number | null;
+    /** The song has sung words to caption. */
+    captions: boolean;
+  };
   crates: { id: string; name: string; count: number }[];
 };
 

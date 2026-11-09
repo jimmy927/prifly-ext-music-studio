@@ -1,9 +1,13 @@
 {
   "id": "music-studio",
   "name": "Music Studio",
-  "description": "Take a song idea to sketches, an arrangement, stems and a mix with ElevenLabs Music or Lyria, then master it, prepare it for DJing (BPM, key, beatgrid, cues, crates) and deliver stems, masters and rekordbox files. Every paid step waits for your confirm; mastering, preparing and delivering run on this computer.",
-  "version": "0.1.0",
+  "description": "Take a song idea to sketches, an arrangement, stems and a mix with ElevenLabs Music or Lyria, then master it, prepare it for DJing (BPM, key, beatgrid, cues, crates), make a music video (treatment, storyboard, clips with Gemini, an edit cut to the beat with karaoke captions) and deliver stems, masters, rekordbox files, the video and a vertical cut. Every paid step waits for your confirm; mastering, preparing, editing, rendering and delivering run on this computer.",
+  "version": "0.2.0",
   "main": "index.ts",
+  "llm": {
+    "tiers": ["fast"],
+    "why": "Writes a first description of each shot in the Storyboard from your concept and the song's sections. You can edit or replace every description; if you refuse, they are left blank for you to write."
+  },
   "panels": [
     {
       "id": "studio",
@@ -25,16 +29,25 @@
     {
       "id": "geminiKey",
       "label": "Gemini key",
-      "description": "From aistudio.google.com, Get API key. Used for Lyria 3 Clip and Lyria 3.5.",
+      "description": "From aistudio.google.com, Get API key. Used for Lyria 3 Clip and Lyria 3.5, and for the video stages: still frames (Gemini 3.1 Flash Image) and clips (Gemini Omni 1.2 Flash). Video needs a paid tier (billing on).",
       "type": "secret",
       "default": false
     },
     {
       "id": "ffmpegPath",
       "label": "ffmpeg path",
-      "description": "Mix, Master, Prepare and Deliver use ffmpeg. Leave empty to use ffmpeg from the PATH.",
+      "description": "Mix, Master, Prepare, Deliver and the video Edit use ffmpeg. Leave empty to use ffmpeg from the PATH.",
       "type": "string",
       "default": ""
+    },
+    {
+      "id": "videoBudgetUsd",
+      "label": "Video budget (USD)",
+      "description": "Default dollars a project may spend on its music video (pictures and clips; estimates from Google's prices). Each project can set its own on the Treatment stage. Shooting stops when it is reached.",
+      "type": "number",
+      "default": 25,
+      "min": 0,
+      "max": 10000
     },
     {
       "id": "libraryFolder",

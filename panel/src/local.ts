@@ -9,7 +9,7 @@ import { call, errorText, type Job, type StartAnswer } from "./api";
 import { h, icon } from "./dom";
 import { redraw } from "./state";
 
-export type LocalKind = "master" | "analyse" | "deliver";
+export type LocalKind = "master" | "analyse" | "deliver" | "draft" | "preview" | "render";
 const POLL_MS = 600;
 
 type LocalNotice = { kind: LocalKind; tone: "info" | "warn" | "error"; text: string };
@@ -93,6 +93,19 @@ export async function startLocal(
   redraw("stage");
 }
 
+/** Picks up a local run that is already going (the page was reopened meanwhile). */
+export async function followLocal(
+  kind: LocalKind,
+  job: Job,
+  done: (job: Job) => Promise<string>,
+): Promise<void> {
+  local.notice = null;
+  local.kind = kind;
+  local.job = job;
+  redraw("stage");
+  await poll(kind, job.id, done);
+}
+
 export async function cancelLocal(): Promise<void> {
   if (local.job === null) return;
   local.cancelling = true;
@@ -121,6 +134,11 @@ const STEP_WORDS: Record<string, string> = {
   master: "master written",
   rekordbox: "rekordbox written",
   loops: "loop points written",
+  video: "music video copied",
+  vertical: "vertical cut written",
+  sections: "cut on the beats",
+  described: "described",
+  graph: "edit built",
 };
 
 /** A row of fixed height: the running job's step and bar, or nothing. */

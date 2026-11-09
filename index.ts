@@ -11,6 +11,8 @@ import { route } from "./panel-router";
 import { arrangeTool, mixTool, sfxTool, stemsTool } from "./stage-tools";
 import { Studio } from "./studio";
 import { libraryTool, sketchTool } from "./tools";
+import { storyboardTool, treatmentTool } from "./video-tools";
+import { editTool, renderTool, shootTool } from "./video-tools-make";
 
 let api: ExtensionApi | null = null;
 
@@ -43,6 +45,11 @@ export function activate(given: ExtensionApi): () => void {
     masterTool(studio),
     prepareTool(studio),
     deliverTool(studio),
+    treatmentTool(studio),
+    storyboardTool(studio),
+    shootTool(studio),
+    editTool(studio),
+    renderTool(studio),
   ]);
   given.onSettings?.(refresh);
   given.log("activated");

@@ -18,8 +18,16 @@ import type { Studio } from "../studio";
 import { sanitiseFileName, stemFileNames } from "./names";
 import { type RekordboxTrack, rekordboxXml } from "./rekordbox";
 import { tagArgv } from "./tags";
+import { musicVideo, verticalCut } from "./video";
 
-export const DELIVER_ITEMS = ["stems", "master", "rekordbox", "loops"] as const;
+export const DELIVER_ITEMS = [
+  "stems",
+  "master",
+  "rekordbox",
+  "loops",
+  "video",
+  "vertical",
+] as const;
 export type DeliverItem = (typeof DELIVER_ITEMS)[number];
 export const isDeliverItem = (value: unknown): value is DeliverItem =>
   DELIVER_ITEMS.some((each) => each === value);
@@ -251,6 +259,8 @@ async function writeItems(
     if (item === "stems") await stems(run);
     else if (item === "master") await master(run);
     else if (item === "rekordbox") await rekordbox(run, request.crate);
+    else if (item === "video") await musicVideo(run);
+    else if (item === "vertical") await verticalCut(run);
     else await loops(run);
     step(item);
   }

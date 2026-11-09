@@ -12,6 +12,8 @@ import type { Fetch } from "../engines/types";
 import { arrangeTool, mixTool, sfxTool, stemsTool } from "../stage-tools";
 import { Studio } from "../studio";
 import { libraryTool, sketchTool } from "../tools";
+import { storyboardTool, treatmentTool } from "../video-tools";
+import { editTool, renderTool, shootTool } from "../video-tools-make";
 import { type FakeApi, fakeApi } from "./fake-api";
 
 export type Call = {
@@ -149,7 +151,13 @@ export function world(
     calls.push(call);
     return await handler(call);
   };
-  const studio = new Studio({ api: () => fake.api, fetch: fetchFn });
+  // Polls come a millisecond apart and renders are 160x90, so a test runs a whole edit in a blink.
+  const studio = new Studio({
+    api: () => fake.api,
+    fetch: fetchFn,
+    pollMs: 1,
+    renderSize: { width: 160, height: 90 },
+  });
   fake.api.tools?.register([
     sketchTool(studio),
     libraryTool(studio),
@@ -160,6 +168,11 @@ export function world(
     masterTool(studio),
     prepareTool(studio),
     deliverTool(studio),
+    treatmentTool(studio),
+    storyboardTool(studio),
+    shootTool(studio),
+    editTool(studio),
+    renderTool(studio),
   ]);
   return { fake, studio, calls, folder, callTool: fake.callTool };
 }

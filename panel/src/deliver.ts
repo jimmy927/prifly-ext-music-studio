@@ -2,8 +2,9 @@
  * The Deliver stage: DAW stems named like `122bpm 8A Vocals.wav`, the master
  * with BPM and key tags, a rekordbox XML (this track, or a crate as a
  * playlist), and the prepared track with its cue and loop points as JSON, into
- * `<project>/deliver` or a folder you name. The video outputs have fixed,
- * disabled places here until the Video stages arrive.
+ * `<project>/deliver` or a folder you name. The music video (the newest
+ * 1080p render) and the 9:16 vertical cut are rows of their own: on once
+ * there is a render, or a clip to cut from.
  */
 
 import type { DeliverItem } from "../../export/run";
@@ -101,6 +102,20 @@ function rowsOf(): Row[] {
       available: v?.prepared === true,
       why: "Not analysed yet. Analyse it on the Prepare stage.",
     },
+    {
+      item: "video",
+      title: "Music video",
+      detail: `MP4, H.264, 1080p, the master as sound${v?.video.render?.stale === true ? ". The edit has changed since this render" : ""}`,
+      available: v?.video.render != null,
+      why: "No 1080p render yet. Render 1080p on the Edit stage first.",
+    },
+    {
+      item: "vertical",
+      title: "Vertical cut",
+      detail: `9:16, about ${v?.video.verticalSec ?? 30} seconds of the chorus or the range you chose, ${v?.video.captions === true ? "captions on" : "no captions (no sung words)"}, centre crop. Rendered now: you confirm first`,
+      available: (v?.video.clips ?? 0) > 0,
+      why: "No shot has a clip yet. Shoot on the Shoot stage first.",
+    },
   ];
 }
 
@@ -130,20 +145,6 @@ function itemRow(row: Row): HTMLElement {
   );
 }
 
-function soonRow(title: string): HTMLElement {
-  return h(
-    "label",
-    { class: "deliver-row off", "data-item": title.toLowerCase().replace(/\s+/g, "-") },
-    h("input", { type: "checkbox", disabled: true }),
-    h(
-      "span",
-      { class: "deliver-text" },
-      h("span", { class: "card-title" }, title),
-      h("span", { class: "meta" }, "Comes with the Video stages."),
-    ),
-  );
-}
-
 function drawRows(): void {
   const v = view;
   const keep = crate.value;
@@ -155,7 +156,7 @@ function drawRows(): void {
     ),
   );
   if ((v?.crates ?? []).some((each) => each.id === keep)) crate.value = keep;
-  fill(rows, ...rowsOf().map(itemRow), soonRow("Music video"), soonRow("Vertical cut"));
+  fill(rows, ...rowsOf().map(itemRow));
 }
 
 function blocker(): string | null {

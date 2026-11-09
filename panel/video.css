@@ -1,0 +1,329 @@
+/* The Video stages: Treatment, Storyboard, Shoot and Edit. Tokens come from style.css; nothing here sets a colour of its own. */
+
+.money {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 34px;
+}
+.money-text {
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+.money.over .money-text {
+  color: var(--bad);
+}
+.money.over .fill {
+  background: var(--bad);
+}
+.money .track {
+  height: 5px;
+}
+
+.format-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.chip.static {
+  cursor: default;
+}
+.format-row input[type="number"] {
+  width: 90px;
+}
+
+.cast-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+.cast-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 8px;
+}
+.cast-add {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.drop {
+  flex: 1;
+  min-width: 180px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  color: var(--muted-fg);
+}
+.drop.off {
+  opacity: 0.5;
+}
+
+.pic-wrap {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  min-width: 0;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.cast-tile .pic-wrap {
+  aspect-ratio: 1 / 1;
+}
+.pic-wrap .pic {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.pic-wrap.failed {
+  outline: 1px solid var(--bad);
+}
+
+.shots {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.shot {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) minmax(0, 1fr);
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 10px;
+}
+.shot.approved {
+  border-color: var(--ok);
+}
+@media (max-width: 640px) {
+  .shot {
+    grid-template-columns: 1fr;
+  }
+}
+.shot-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.shot-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+}
+.shot-body textarea {
+  width: 100%;
+}
+.shot-text {
+  white-space: pre-wrap;
+}
+.shot-actions,
+.take-actions,
+.split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.split select {
+  width: auto;
+  max-width: 100%;
+}
+.btn.on {
+  border-color: var(--ok);
+}
+.error-text {
+  color: var(--bad);
+}
+
+.take {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.take.failed {
+  border-color: var(--bad);
+}
+.clip-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 420px;
+}
+.clip {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--muted);
+  border-radius: 6px;
+}
+.clip-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The Edit timeline */
+.timeline-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 8px 10px 10px;
+}
+.timeline {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+.timeline .lane-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+.ruler {
+  position: relative;
+  height: 18px;
+  border-bottom: 1px solid var(--border);
+}
+.ruler .tick {
+  position: absolute;
+  top: 0;
+  font-size: 11px;
+  color: var(--muted-fg);
+  border-left: 1px solid var(--border);
+  padding-left: 3px;
+  height: 100%;
+}
+.lane.video {
+  position: relative;
+  height: 62px;
+  background: var(--muted);
+  border-radius: 6px;
+}
+.block {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--bg);
+  background: var(--accent);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+.block .pic-wrap {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0;
+  opacity: 0.55;
+}
+.block > span {
+  position: relative;
+}
+.block.gap {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--muted),
+    var(--muted) 6px,
+    var(--border) 6px,
+    var(--border) 12px
+  );
+}
+.block-gap {
+  color: var(--bad);
+  font-weight: 600;
+}
+.block-mark {
+  background: var(--card);
+  border-radius: 4px;
+  padding: 0 4px;
+  align-self: flex-start;
+}
+.block.t-flash {
+  border-left: 3px solid var(--warn);
+}
+.block.t-crossfade {
+  border-left: 3px solid var(--brand);
+}
+.lane-band {
+  background: var(--muted);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+.lane-band.on {
+  color: var(--fg);
+  border-left: 3px solid var(--brand);
+}
+.edit-options {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.warnings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-height: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+.warnings li {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.edit-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.edit-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) minmax(90px, 0.8fr) minmax(150px, 1fr) minmax(
+      170px,
+      1fr
+    ) minmax(110px, 0.8fr);
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 4px 0;
+}
+@media (max-width: 760px) {
+  .edit-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.preview-box,
+.renders {
+  min-height: 40px;
+}

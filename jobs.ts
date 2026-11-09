@@ -21,10 +21,13 @@ import {
 export type Confirm = Parameters<NonNullable<ExtensionApi["confirm"]>>[0];
 
 export type Work = {
-  work: Extract<JobKind, "arrange" | "stems" | "sfx">;
+  work: Extract<JobKind, "arrange" | "stems" | "sfx" | "cast" | "frames" | "shoot">;
+  /** Whose key pays: ElevenLabs (the default) or Gemini. */
+  provider?: "gemini";
   label: string;
   total: number;
-  confirm: Confirm;
+  /** The card the reader answers first; null for work that costs nothing new (fetching a clip already paid for). */
+  confirm: Confirm | null;
   /** Does the work; returns what it made ("v2"). Throws to fail the job. */
   run: (context: { key: string; signal: AbortSignal; job: Job; store: Store }) => Promise<string>;
 };
@@ -56,21 +59,26 @@ export async function launch(
   work: Work,
   linked?: AbortSignal,
 ): Promise<Started> {
-  const key = await studio.key("elevenlabs");
-  if (key === null) return fail("no_key", `There is no ElevenLabs key. ${SETTINGS_HINT}`);
+  const gemini = work.provider === "gemini";
+  const key = await studio.key(gemini ? "lyria-clip" : "elevenlabs");
+  if (key === null)
+    return fail("no_key", `There is no ${gemini ? "Gemini" : "ElevenLabs"} key. ${SETTINGS_HINT}`);
   if (busy(studio)) return fail("invalid", "Another run is still going. Wait for it or cancel it.");
   const api = studio.api();
-  if (api.confirm === undefined)
-    return fail("unsupported", "This prifly cannot ask you first. Update prifly.");
-  if (!(await api.confirm(work.confirm))) return fail("cancelled", "Not done: you cancelled.");
-  // Another call may have started while the card was open.
-  if (busy(studio)) return fail("invalid", "Another run is still going. Wait for it or cancel it.");
+  if (work.confirm !== null) {
+    if (api.confirm === undefined)
+      return fail("unsupported", "This prifly cannot ask you first. Update prifly.");
+    if (!(await api.confirm(work.confirm))) return fail("cancelled", "Not done: you cancelled.");
+    // Another call may have started while the card was open.
+    if (busy(studio))
+      return fail("invalid", "Another run is still going. Wait for it or cancel it.");
+  }
   const job: Job = {
     id: crypto.randomUUID().slice(0, 8),
     work: work.work,
     label: work.label,
     project: entry.id,
-    engine: "elevenlabs",
+    engine: gemini ? null : "elevenlabs",
     status: "running",
     done: [],
     total: work.total,
@@ -88,7 +96,7 @@ export async function launch(
 
 /** Work done on this computer (no key, no cost, no card): analysing, mastering, exporting. */
 export type LocalWork = {
-  work: Extract<JobKind, "master" | "analyse" | "deliver">;
+  work: Extract<JobKind, "master" | "analyse" | "deliver" | "draft" | "preview" | "render">;
   label: string;
   /** How many steps it has; each finished step is pushed on `job.done`. */
   total: number;
