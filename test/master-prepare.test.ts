@@ -282,3 +282,18 @@ test("a newer master than the analysed file marks the analysis stale", async () 
   await localJob(w, "master-render", { project: id, target: "streaming", format: "wav" });
   expect(((await ask(w, "prepare", { project: id })) as PrepareView).stale).toBe(true);
 });
+
+test("cancelling during the loudness step keeps the earlier analysis", async () => {
+  const w = dj();
+  const { id, dir } = await audioProject(w, song(120, 8));
+  await localJob(w, "prepare-analyse", { project: id });
+  const before = await Bun.file(join(dir, "prep.json")).text();
+  const entry = await w.studio.store().find(id);
+  if (entry === null) throw new Error("no project");
+  const abort = new AbortController();
+  const result = await analyseProject(w.studio, entry, abort.signal, (name) => {
+    if (name === "key") abort.abort();
+  });
+  expect(result).toMatchObject({ ok: false, reason: "cancelled" });
+  expect(await Bun.file(join(dir, "prep.json")).text()).toBe(before);
+});

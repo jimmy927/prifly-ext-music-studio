@@ -15,6 +15,7 @@ test("the three DJ tools are registered", () => {
 test("music_master masters locally, asks nothing, and returns the path with the loudness before and after", async () => {
   const w = dj();
   const { id, dir } = await audioProject(w, song(120, 6));
+  const before = w.fake.confirms.length;
   const text = await w.callTool("music_master", { project: id, target: "club", format: "wav" });
   expect(text).toContain("Mastered");
   expect(text).toContain("Club, -9 LUFS, as WAV 24-bit");
@@ -23,8 +24,7 @@ test("music_master masters locally, asks nothing, and returns the path with the 
   expect(text).toContain("converted, not lossless");
   expect(text).toContain(join(dir, "master", "master-1.wav"));
   expect(existsSync(join(dir, "master", "master-1.wav"))).toBe(true);
-  expect(w.fake.confirms).toHaveLength(2 - 2 + w.fake.confirms.length);
-  expect(w.fake.confirms.some((card) => card.title.includes("Master"))).toBe(false);
+  expect(w.fake.confirms).toHaveLength(before);
 });
 
 test("music_master says what is wrong in words", async () => {

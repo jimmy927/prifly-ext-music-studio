@@ -166,3 +166,17 @@ test("Deliver refuses a relative folder, an empty choice, and says when ffmpeg i
   const view = (await ask(bad, "deliver", { project: other.id })) as { ffmpeg: { ok: boolean } };
   expect(view.ffmpeg.ok).toBe(false);
 });
+
+test("a stem that fails to convert leaves no file under its final name", async () => {
+  const w = dj();
+  const { id, dir } = await ready(w);
+  const set = JSON.parse(await Bun.file(join(dir, "stems", "stems.json")).text()) as {
+    stems: { file: string }[];
+  };
+  await Bun.write(join(dir, set.stems[0]?.file ?? ""), "not audio");
+  const job = await localJob(w, "deliver-run", { project: id, items: ["stems"] });
+  expect(job.status).toBe("failed");
+  const out = join(dir, "deliver", "stems");
+  const names = existsSync(out) ? readdirSync(out) : [];
+  expect(names.some((name) => name.includes("Vocals"))).toBe(false);
+});

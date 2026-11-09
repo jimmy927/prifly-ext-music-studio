@@ -141,6 +141,10 @@ export async function renderMaster(
   step("rendered");
   const after = await runFfmpeg(binary, measureArgv(out), signal);
   const output = after.ok ? parseEbur128(after.log) : null;
+  if (signal?.aborted === true) {
+    await rm(out, { force: true });
+    return fault("", signal);
+  }
   step("checked");
   const record: MasterRecord = {
     n: next.n,

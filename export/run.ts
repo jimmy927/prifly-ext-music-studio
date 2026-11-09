@@ -6,7 +6,7 @@
  * is given. Nothing here costs anything; files of the same name are replaced.
  */
 
-import { copyFile, mkdir, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { probeFfmpeg, runFfmpeg } from "../audio/ffmpeg";
 import { loopEnd } from "../prep/grid";
@@ -93,7 +93,10 @@ async function stems(run: Run): Promise<void> {
       ],
       run.signal,
     );
-    if (!ran.ok) throw new Error(ran.message);
+    if (!ran.ok) {
+      await rm(target, { force: true });
+      throw new Error(ran.message);
+    }
     run.files.push(target);
   }
   if ((run.prep?.grid ?? null) === null)
@@ -132,7 +135,10 @@ async function master(run: Run): Promise<void> {
     );
   } else {
     const ran = await runFfmpeg(run.binary, tagged.argv, run.signal);
-    if (!ran.ok) throw new Error(ran.message);
+    if (!ran.ok) {
+      await rm(target, { force: true });
+      throw new Error(ran.message);
+    }
     run.notes.push(`Master: tagged ${tagged.tags}.`);
   }
   run.files.push(target);

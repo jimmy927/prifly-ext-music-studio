@@ -62,6 +62,7 @@ export async function analyseAudio(
     const key = await estimateKey(pcm, signal);
     step("key");
     const loudness = await measureFile(studio, dir, source.file, signal);
+    if (signal.aborted) return stopped(null, signal);
     step("loudness");
     return {
       ok: true,

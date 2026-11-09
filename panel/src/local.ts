@@ -59,6 +59,7 @@ async function poll(
   } catch (caught) {
     local.notice = { kind, tone: "error", text: errorText(caught) };
     local.job = null;
+    local.cancelling = false;
   }
   redraw("stage");
 }
@@ -99,6 +100,7 @@ export async function cancelLocal(): Promise<void> {
   try {
     await call("cancel", { job: local.job.id });
   } catch (caught) {
+    local.cancelling = false;
     local.notice = {
       kind: local.kind ?? "master",
       tone: "error",
