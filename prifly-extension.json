@@ -1,0 +1,40 @@
+{
+  "id": "music-studio",
+  "name": "Music Studio",
+  "description": "Take a song idea to three 30-second sketches with ElevenLabs Music or Lyria, keep them in a library, and (in later versions) arrange, mix, master and film it. Every paid step waits for your confirm.",
+  "version": "0.1.0",
+  "main": "index.ts",
+  "panels": [
+    {
+      "id": "studio",
+      "label": "Music Studio",
+      "icon": "zap",
+      "description": "Sketch song ideas and keep them in a library",
+      "folder": "panel",
+      "page": "index.html"
+    }
+  ],
+  "settings": [
+    {
+      "id": "elevenlabsKey",
+      "label": "ElevenLabs key",
+      "description": "From elevenlabs.io, Developers, API keys. Used for Music v2.5 and to show your credits.",
+      "type": "secret",
+      "default": false
+    },
+    {
+      "id": "geminiKey",
+      "label": "Gemini key",
+      "description": "From aistudio.google.com, Get API key. Used for Lyria 3 Clip and Lyria 3.5.",
+      "type": "secret",
+      "default": false
+    },
+    {
+      "id": "libraryFolder",
+      "label": "Library folder",
+      "description": "Where each project's folder is kept. Made on the first sketch.",
+      "type": "string",
+      "default": "~/Music/prifly-music-studio"
+    }
+  ]
+}

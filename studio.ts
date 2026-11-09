@@ -1,0 +1,274 @@
+/**
+ * What the panel and the session tools share: the keys, the store, the
+ * running jobs, and "Sketch 3 ideas" (check the keys and credits, ask the
+ * reader on a confirm card, then make three sketches in the background).
+ */
+
+import type { ExtensionApi } from "@prifly/extension-api";
+import { type Credits, composeDetailed, credits as elevenCredits } from "./engines/elevenlabs";
+import { lyria } from "./engines/gemini";
+import { EngineError, type EngineErrorKind, type Fetch, type Sketched } from "./engines/types";
+import {
+  type Brief,
+  buildPrompt,
+  ENGINE_LABELS,
+  type EngineId,
+  estimateCredits,
+  parseBrief,
+  SKETCH_IDS,
+  SKETCH_MS,
+  type SketchId,
+  titleOf,
+} from "./project/brief";
+import { type IndexEntry, libraryFolder, Store } from "./project/store";
+
+export type Deps = { api: () => ExtensionApi | null; fetch: Fetch };
+
+export const SETTINGS_HINT = "Add it in Settings → Extensions → Music Studio.";
+
+export type JobStatus = "running" | "done" | "failed" | "cancelled";
+
+/** A sketch run, as the panel polls it. */
+export type Job = {
+  id: string;
+  /** The project the sketches go to; null once an empty project was removed again. */
+  project: string | null;
+  engine: EngineId;
+  status: JobStatus;
+  /** Sketches finished so far. */
+  done: SketchId[];
+  total: number;
+  error: string | null;
+  kind: EngineErrorKind | null;
+  /** The prompt ElevenLabs suggested when it refused the brief. */
+  suggestion: string | null;
+};
+
+export class Studio {
+  readonly deps: Deps;
+  readonly jobs = new Map<string, Job>();
+  private readonly aborts = new Map<string, AbortController>();
+
+  constructor(deps: Deps) {
+    this.deps = deps;
+  }
+
+  api(): ExtensionApi {
+    const api = this.deps.api();
+    if (api === null) throw new Error("The extension is not running.");
+    return api;
+  }
+
+  store(): Store {
+    const api = this.api();
+    if (api.state === undefined) throw new Error("This prifly keeps no state. Update prifly.");
+    return new Store(libraryFolder(api.settings?.["libraryFolder"]), api.state);
+  }
+
+  libraryPath(): string {
+    return libraryFolder(this.api().settings?.["libraryFolder"]);
+  }
+
+  /** The stored key for an engine, or null when there is none. */
+  async key(engine: EngineId): Promise<string | null> {
+    const name = engine === "elevenlabs" ? "elevenlabsKey" : "geminiKey";
+    const key = await this.api().secrets?.get(name);
+    return key === undefined || key === null || key.trim() === "" ? null : key.trim();
+  }
+
+  cancel(jobId: string): boolean {
+    const abort = this.aborts.get(jobId);
+    if (abort === undefined) return false;
+    abort.abort();
+    return true;
+  }
+
+  register(job: Job, abort: AbortController): void {
+    this.jobs.set(job.id, job);
+    this.aborts.set(job.id, abort);
+  }
+
+  release(jobId: string): void {
+    this.aborts.delete(jobId);
+  }
+}
+
+export type Status = {
+  elevenlabs: { keySet: boolean; credits: Credits | null; error: string | null };
+  gemini: { keySet: boolean };
+  library: string;
+};
+
+/** The header line's facts: the keys that are set and the ElevenLabs credits left. */
+export async function statusOf(studio: Studio): Promise<Status> {
+  const eleven = await studio.key("elevenlabs");
+  const gemini = await studio.key("lyria-clip");
+  let credits: Credits | null = null;
+  let error: string | null = null;
+  if (eleven !== null) {
+    try {
+      credits = await elevenCredits(studio.deps.fetch, eleven);
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : String(caught);
+    }
+  }
+  return {
+    elevenlabs: { keySet: eleven !== null, credits, error },
+    gemini: { keySet: gemini !== null },
+    library: studio.libraryPath(),
+  };
+}
+
+export type Started =
+  | { ok: true; job: Job; finished: Promise<Job> }
+  | {
+      ok: false;
+      reason: "invalid" | "no_key" | "out_of_credits" | "cancelled" | "unsupported" | "failed";
+      message: string;
+    };
+
+const fail = (reason: Extract<Started, { ok: false }>["reason"], message: string): Started => ({
+  ok: false,
+  reason,
+  message,
+});
+
+/** The confirm card's words for a sketch run. */
+export function confirmSpec(
+  brief: Brief,
+  left: number | null,
+): Parameters<NonNullable<ExtensionApi["confirm"]>>[0] {
+  const engine = ENGINE_LABELS[brief.engine];
+  const cost =
+    brief.engine === "elevenlabs"
+      ? `about ${estimateCredits("elevenlabs").toLocaleString("en-US")} ElevenLabs credits (an estimate; ElevenLabs does not publish a price per track)${left === null ? "" : `, ${left.toLocaleString("en-US")} left`}`
+      : "billed to your Gemini key (Google's price per clip is not shown here)";
+  return {
+    title: "Sketch 3 ideas",
+    summary: `Make 3 sketches of 30 seconds with ${engine}: ${cost}`,
+    content: buildPrompt(brief),
+    details: `${brief.engine === "elevenlabs" ? "POST /v1/music/detailed, model music_v2_5" : "POST /v1beta/interactions, model lyria-3-clip-preview"}, ${SKETCH_MS} ms, ${brief.vocals === "instrumental" ? "instrumental" : "with vocals"}, three calls`,
+  };
+}
+
+async function makeOne(
+  studio: Studio,
+  brief: Brief,
+  key: string,
+  signal: AbortSignal,
+): Promise<Sketched> {
+  const request = {
+    prompt: buildPrompt(brief),
+    lengthMs: SKETCH_MS,
+    instrumental: brief.vocals === "instrumental",
+  };
+  return brief.engine === "elevenlabs"
+    ? await composeDetailed(studio.deps.fetch, key, request, signal)
+    : await lyria(studio.deps.fetch, key, "lyria-3-clip-preview", request, signal);
+}
+
+/** Makes the sketches one after another into the project; ends the job whatever happens. */
+async function run(
+  studio: Studio,
+  job: Job,
+  entry: IndexEntry,
+  brief: Brief,
+  key: string,
+  signal: AbortSignal,
+) {
+  const store = studio.store();
+  try {
+    for (const id of SKETCH_IDS) {
+      if (signal.aborted) break;
+      await store.saveSketch(entry, id, await makeOne(studio, brief, key, signal), brief.engine);
+      job.done.push(id);
+    }
+    job.status = signal.aborted ? "cancelled" : "done";
+  } catch (caught) {
+    if (signal.aborted) {
+      job.status = "cancelled";
+    } else {
+      job.status = "failed";
+      job.error = caught instanceof Error ? caught.message : String(caught);
+      if (caught instanceof EngineError) {
+        job.kind = caught.kind;
+        job.suggestion = caught.suggestion;
+      }
+    }
+  }
+  // A project with no sketch is only clutter in the library.
+  if (job.done.length === 0) {
+    await store.remove(entry);
+    job.project = null;
+  }
+  studio.release(job.id);
+  return job;
+}
+
+/** The credits ElevenLabs has left, or the refusal when the key is bad or the credits will not cover the run. */
+async function creditsCheck(
+  studio: Studio,
+  key: string,
+): Promise<{ left: number | null } | Extract<Started, { ok: false }>> {
+  let left: number | null = null;
+  try {
+    left = (await elevenCredits(studio.deps.fetch, key)).left;
+  } catch (caught) {
+    // Any other failure only means the figure is unknown; the run itself will say.
+    if (caught instanceof EngineError && caught.kind === "auth") {
+      return { ok: false, reason: "no_key", message: `${caught.message} ${SETTINGS_HINT}` };
+    }
+  }
+  const needed = estimateCredits("elevenlabs");
+  if (left !== null && left < needed) {
+    const message = `ElevenLabs has ${left.toLocaleString("en-US")} credits left, fewer than the estimated ${needed.toLocaleString("en-US")}.`;
+    return { ok: false, reason: "out_of_credits", message };
+  }
+  return { left };
+}
+
+/**
+ * "Sketch 3 ideas": checks, asks the reader, and starts the run. Nothing is
+ * spent before the reader confirms. `linked` aborts the run when it fires
+ * (the session that called the tool went away).
+ */
+export async function startSketch(
+  studio: Studio,
+  raw: unknown,
+  linked?: AbortSignal,
+): Promise<Started> {
+  const brief = parseBrief(raw);
+  if (typeof brief === "string") return fail("invalid", brief);
+  const key = await studio.key(brief.engine);
+  if (key === null) {
+    const which = brief.engine === "elevenlabs" ? "ElevenLabs" : "Gemini";
+    return fail("no_key", `There is no ${which} key. ${SETTINGS_HINT}`);
+  }
+  let left: number | null = null;
+  if (brief.engine === "elevenlabs") {
+    const checked = await creditsCheck(studio, key);
+    if ("ok" in checked) return checked;
+    left = checked.left;
+  }
+  const api = studio.api();
+  if (api.confirm === undefined)
+    return fail("unsupported", "This prifly cannot ask you first. Update prifly.");
+  if (!(await api.confirm(confirmSpec(brief, left))))
+    return fail("cancelled", "Not done: you cancelled.");
+  const entry = await studio.store().create(brief, titleOf(brief));
+  const job: Job = {
+    id: crypto.randomUUID().slice(0, 8),
+    project: entry.id,
+    engine: brief.engine,
+    status: "running",
+    done: [],
+    total: SKETCH_IDS.length,
+    error: null,
+    kind: null,
+    suggestion: null,
+  };
+  const abort = new AbortController();
+  linked?.addEventListener("abort", () => abort.abort());
+  studio.register(job, abort);
+  return { ok: true, job, finished: run(studio, job, entry, brief, key, abort.signal) };
+}

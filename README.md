@@ -1,0 +1,29 @@
+# Music Studio for prifly
+
+Take a song idea to three 30-second sketches with ElevenLabs Music v2.5 or Lyria 3 Clip, keep them in a library, and (in later versions) arrange, mix, master and film it.
+
+This is slice 1: the foundation and the Idea stage.
+
+- **Music Studio panel** (status bar button): the stage bar (Song, DJ, Video, Deliver), the Idea stage and the Library. Only Idea and the Library work; the other tabs are there, disabled, and say which later version brings them.
+- **Sketch 3 ideas** shows one confirm card with the estimated cost, then makes three sketches you can play and mark as chosen.
+- **Session tools**: `music_sketch` (paid, confirm card first) and `music_library` (read-only list with file paths).
+
+## Setup
+
+1. Link this folder into `~/.local/share/prifly/extensions/music-studio` and enable Music Studio in Settings → Extensions.
+2. Enter an ElevenLabs key and a Gemini key there (secret fields, kept in the extension's own sealed store, never in the vault).
+3. Open the Music Studio panel. Projects are saved under the library folder (default `~/Music/prifly-music-studio`) as `<slug>-<id>/brief.json` and `sketches/<a|b|c>.mp3` with a `.json` beside each.
+
+## Development
+
+```
+bun install
+bun test
+bun run check
+bun run typecheck
+bun run build:panel   # after any change in panel/src or project/brief.ts
+```
+
+The page is TypeScript in `panel/src`, bundled with `Bun.build` into the committed `panel/app.js` (prifly installs extensions with `--ignore-scripts`). A test fails when the committed bundle is stale.
+
+Licence: FSL-1.1-ALv2 (see LICENSE.md); contributions are under the CLA.

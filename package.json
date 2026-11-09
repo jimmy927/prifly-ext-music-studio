@@ -1,0 +1,19 @@
+{
+  "name": "prifly-ext-music-studio",
+  "private": true,
+  "license": "FSL-1.1-ALv2",
+  "type": "module",
+  "description": "A prifly extension: take a song idea through sketches, arrangement, mixing and mastering, and on to a music video, in one panel.",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "check": "biome check .",
+    "build:panel": "bun run scripts/build-panel.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@prifly/extension-api": "git+ssh://git@github.com/jimmy927/prifly-extension-api.git#v0.15.0",
+    "@types/bun": "^1.1.14",
+    "typescript": "^7.0.2"
+  }
+}

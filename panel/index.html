@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Music Studio</title>
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="results.css" />
+    <script>
+      // Before the first paint: the window says light or dark in the query.
+      if (new URLSearchParams(location.search).get("theme") === "dark") {
+        document.documentElement.classList.add("dark");
+      }
+    </script>
+  </head>
+  <body>
+    <noscript>Music Studio needs JavaScript.</noscript>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

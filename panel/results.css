@@ -1,0 +1,227 @@
+/* The sketches, progress row, notices and the Library; tokens come from style.css. */
+/* Sketches */
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.card.chosen {
+  border-color: var(--brand);
+}
+.card.ghost {
+  color: var(--muted-fg);
+  border-style: dashed;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.card-title {
+  font-weight: 600;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--brand);
+  font-weight: 600;
+}
+.player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.play {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--brand);
+  color: var(--brand-fg);
+  cursor: pointer;
+  flex: none;
+}
+.play:disabled {
+  opacity: 0.6;
+}
+.seek {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--brand);
+}
+.time {
+  font: 12px var(--mono);
+  color: var(--muted-fg);
+  white-space: nowrap;
+}
+.player-note {
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+.lyrics summary {
+  cursor: pointer;
+  color: var(--muted-fg);
+}
+.lyrics pre {
+  white-space: pre-wrap;
+  margin: 6px 0 0;
+  font: inherit;
+}
+.folder {
+  margin-top: 10px;
+  word-break: break-all;
+}
+
+/* Progress */
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+.fill {
+  height: 100%;
+  background: var(--brand);
+  transition: width 0.3s;
+}
+.bar-busy {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--border), var(--brand), var(--border));
+  background-size: 200% 100%;
+  animation: slide 1.4s linear infinite;
+}
+@keyframes slide {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar-busy {
+    animation: none;
+  }
+}
+
+/* Notices */
+.notices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--muted);
+  padding: 8px 12px;
+}
+.notice.warn {
+  border-left-color: var(--warn);
+}
+.notice.error {
+  border-left-color: var(--bad);
+}
+.notice.info {
+  border-left-color: var(--brand);
+}
+.notice > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.notice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.suggestion blockquote {
+  margin: 4px 0 8px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+/* Library */
+.library .wide {
+  width: 100%;
+}
+.lib-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.lib-head h2 {
+  margin: 0;
+}
+.search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(320px, 100%);
+  color: var(--muted-fg);
+}
+.projects {
+  width: 100%;
+  border-collapse: collapse;
+}
+.projects th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-fg);
+  border-bottom: 1px solid var(--border);
+  padding: 4px 8px;
+}
+.projects td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.projects .title {
+  font-weight: 600;
+}
+.empty,
+.empty-state {
+  color: var(--muted-fg);
+}
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 24px 0;
+}
