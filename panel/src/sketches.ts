@@ -12,6 +12,7 @@ async function choose(project: string, sketch: SketchId): Promise<void> {
   } catch (caught) {
     app.notice = { tone: "error", text: errorText(caught) };
   }
+  redraw("head");
   redraw("idea");
 }
 

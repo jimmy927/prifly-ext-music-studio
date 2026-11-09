@@ -3,6 +3,16 @@
 import type { ListItem, ProjectView } from "../../panel-router";
 import type { Job, Status } from "../../studio";
 
+export type {
+  ArrangeView,
+  LayerItem,
+  MixAnswer,
+  MixTrack,
+  MixView,
+  ProduceView,
+  StartAnswer,
+  VersionItem,
+} from "../../routes/views";
 export type { Job, ListItem, ProjectView, Status };
 
 export type SketchAnswer =

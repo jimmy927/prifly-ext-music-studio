@@ -8,6 +8,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Fetch } from "../engines/types";
+import { arrangeTool, mixTool, sfxTool, stemsTool } from "../stage-tools";
 import { Studio } from "../studio";
 import { libraryTool, sketchTool } from "../tools";
 import { type FakeApi, fakeApi } from "./fake-api";
@@ -17,6 +18,8 @@ export type Call = {
   method: string;
   headers: Headers;
   body: string;
+  /** The form a multipart request sent, else null. */
+  form: FormData | null;
   signal: AbortSignal | undefined;
 };
 
@@ -119,11 +122,16 @@ export type World = {
  */
 export function world(
   handler: Handler,
-  options: { keys?: Record<string, string>; confirm?: boolean } = {},
+  options: { keys?: Record<string, string>; confirm?: boolean; ffmpegPath?: string } = {},
 ): World {
   const folder = mkdtempSync(join(tmpdir(), "music-studio-library-"));
   const fake = fakeApi({
-    settings: { libraryFolder: folder, elevenlabsKey: true, geminiKey: true },
+    settings: {
+      libraryFolder: folder,
+      elevenlabsKey: true,
+      geminiKey: true,
+      ffmpegPath: options.ffmpegPath ?? "",
+    },
     secrets: options.keys ?? { elevenlabsKey: "xi-test", geminiKey: "g-test" },
     confirm: options.confirm ?? true,
   });
@@ -134,13 +142,21 @@ export function world(
       method: init?.method ?? "GET",
       headers: new Headers(init?.headers),
       body: typeof init?.body === "string" ? init.body : "",
+      form: init?.body instanceof FormData ? init.body : null,
       signal: init?.signal ?? undefined,
     };
     calls.push(call);
     return await handler(call);
   };
   const studio = new Studio({ api: () => fake.api, fetch: fetchFn });
-  fake.api.tools?.register([sketchTool(studio), libraryTool(studio)]);
+  fake.api.tools?.register([
+    sketchTool(studio),
+    libraryTool(studio),
+    arrangeTool(studio),
+    stemsTool(studio),
+    sfxTool(studio),
+    mixTool(studio),
+  ]);
   return { fake, studio, calls, folder, callTool: fake.callTool };
 }
 

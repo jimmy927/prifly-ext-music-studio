@@ -26,6 +26,11 @@
   "include": [
     "*.ts",
     "engines/**/*.ts",
+    "arrange/**/*.ts",
+    "audio/**/*.ts",
+    "mix/**/*.ts",
+    "produce/**/*.ts",
+    "routes/**/*.ts",
     "project/**/*.ts",
     "panel/src/**/*.ts",
     "scripts/**/*.ts",

@@ -7,6 +7,7 @@
 
 import type { ExtensionApi, PanelRequest } from "@prifly/extension-api";
 import { route } from "./panel-router";
+import { arrangeTool, mixTool, sfxTool, stemsTool } from "./stage-tools";
 import { Studio } from "./studio";
 import { libraryTool, sketchTool } from "./tools";
 
@@ -31,7 +32,14 @@ export function activate(given: ExtensionApi): () => void {
   api = given;
   const refresh = () => void statusLine(given).then((text) => given.status?.(text));
   refresh();
-  given.tools?.register([sketchTool(studio), libraryTool(studio)]);
+  given.tools?.register([
+    sketchTool(studio),
+    libraryTool(studio),
+    arrangeTool(studio),
+    stemsTool(studio),
+    sfxTool(studio),
+    mixTool(studio),
+  ]);
   given.onSettings?.(refresh);
   given.log("activated");
   return () => {

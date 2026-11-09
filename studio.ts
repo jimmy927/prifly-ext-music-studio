@@ -5,6 +5,7 @@
  */
 
 import type { ExtensionApi } from "@prifly/extension-api";
+import { ffmpegBinary } from "./audio/ffmpeg";
 import { type Credits, composeDetailed, credits as elevenCredits } from "./engines/elevenlabs";
 import { lyria } from "./engines/gemini";
 import { EngineError, type EngineErrorKind, type Fetch, type Sketched } from "./engines/types";
@@ -16,7 +17,6 @@ import {
   parseBrief,
   SKETCH_IDS,
   SKETCH_MS,
-  type SketchId,
   titleOf,
 } from "./project/brief";
 import { type IndexEntry, libraryFolder, Store } from "./project/store";
@@ -27,16 +27,23 @@ export const SETTINGS_HINT = "Add it in Settings → Extensions → Music Studio
 
 export type JobStatus = "running" | "done" | "failed" | "cancelled";
 
-/** A sketch run, as the panel polls it. */
+export type JobKind = "sketch" | "arrange" | "stems" | "sfx";
+
+/** A paid run (sketches, an arrange render, stems, a sound effect), as the panel polls it. */
 export type Job = {
   id: string;
-  /** The project the sketches go to; null once an empty project was removed again. */
+  work: JobKind;
+  /** What the run is doing, in words: "Rendering version 2". */
+  label: string;
+  /** The project the work goes to; null once an empty project was removed again. */
   project: string | null;
   engine: EngineId;
   status: JobStatus;
-  /** Sketches finished so far. */
-  done: SketchId[];
+  /** Steps finished so far (sketch ids for sketches). */
+  done: string[];
   total: number;
+  /** What the run made, once done: "v2", "stems", a layer id. */
+  result: string | null;
   error: string | null;
   kind: EngineErrorKind | null;
   /** The prompt ElevenLabs suggested when it refused the brief. */
@@ -62,6 +69,11 @@ export class Studio {
     const api = this.api();
     if (api.state === undefined) throw new Error("This prifly keeps no state. Update prifly.");
     return new Store(libraryFolder(api.settings?.["libraryFolder"]), api.state);
+  }
+
+  /** The ffmpeg to start: the `ffmpegPath` setting, else the PATH's. */
+  ffmpeg(): string {
+    return ffmpegBinary(this.api().settings?.["ffmpegPath"]);
   }
 
   libraryPath(): string {
@@ -126,7 +138,10 @@ export type Started =
       message: string;
     };
 
-const fail = (reason: Extract<Started, { ok: false }>["reason"], message: string): Started => ({
+export const fail = (
+  reason: Extract<Started, { ok: false }>["reason"],
+  message: string,
+): Started => ({
   ok: false,
   reason,
   message,
@@ -163,6 +178,20 @@ async function makeOne(
     : await lyria(studio.deps.fetch, key, "lyria-3-clip-preview", request, signal);
 }
 
+/** Ends a job that threw: cancelled when the reader aborted it, else failed with the engine's words. */
+export function endFailed(job: Job, caught: unknown, signal: AbortSignal): void {
+  if (signal.aborted) {
+    job.status = "cancelled";
+    return;
+  }
+  job.status = "failed";
+  job.error = caught instanceof Error ? caught.message : String(caught);
+  if (caught instanceof EngineError) {
+    job.kind = caught.kind;
+    job.suggestion = caught.suggestion;
+  }
+}
+
 /** Makes the sketches one after another into the project; ends the job whatever happens. */
 async function run(
   studio: Studio,
@@ -181,16 +210,7 @@ async function run(
     }
     job.status = signal.aborted ? "cancelled" : "done";
   } catch (caught) {
-    if (signal.aborted) {
-      job.status = "cancelled";
-    } else {
-      job.status = "failed";
-      job.error = caught instanceof Error ? caught.message : String(caught);
-      if (caught instanceof EngineError) {
-        job.kind = caught.kind;
-        job.suggestion = caught.suggestion;
-      }
-    }
+    endFailed(job, caught, signal);
   }
   // A project with no sketch is only clutter in the library.
   if (job.done.length === 0) {
@@ -226,11 +246,14 @@ export async function startSketch(
   const entry = await studio.store().create(brief, titleOf(brief));
   const job: Job = {
     id: crypto.randomUUID().slice(0, 8),
+    work: "sketch",
+    label: "Sketching 3 ideas",
     project: entry.id,
     engine: brief.engine,
     status: "running",
     done: [],
     total: SKETCH_IDS.length,
+    result: null,
     error: null,
     kind: null,
     suggestion: null,

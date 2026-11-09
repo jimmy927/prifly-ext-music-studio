@@ -85,10 +85,39 @@ export async function composeDetailed(
   request: SketchRequest,
   signal?: AbortSignal,
 ): Promise<Sketched> {
+  return await postDetailed(fetchFn, key, detailedBody(request), signal);
+}
+
+/** The body `/v1/music/detailed` is sent for a composition plan: stored again so the result can be edited again. */
+export function planBody(chunks: unknown[]): Record<string, unknown> {
+  return {
+    composition_plan: { chunks },
+    model_id: ELEVENLABS_MODEL,
+    store_for_inpainting: true,
+    with_timestamps: true,
+  };
+}
+
+/** Composes from a plan of generation and audio reference chunks; paid. */
+export async function composePlan(
+  fetchFn: Fetch,
+  key: string,
+  chunks: unknown[],
+  signal?: AbortSignal,
+): Promise<Sketched> {
+  return await postDetailed(fetchFn, key, planBody(chunks), signal);
+}
+
+async function postDetailed(
+  fetchFn: Fetch,
+  key: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<Sketched> {
   const response = await fetchFn(`${BASE}/v1/music/detailed`, {
     method: "POST",
     headers: { "xi-api-key": key, "content-type": "application/json" },
-    body: JSON.stringify(detailedBody(request)),
+    body: JSON.stringify(body),
     ...(signal === undefined ? {} : { signal }),
   });
   if (!response.ok) throw errorFrom(response.status, await response.text());

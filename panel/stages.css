@@ -1,0 +1,270 @@
+/* Arrange, Produce and Mix. Tokens come from style.css; nothing here sets a colour of its own. */
+.stage {
+  display: block;
+}
+.stage .main.wide {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.stage h3 {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 6px 0 0;
+}
+.stage input[type="text"] {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  min-width: 0;
+}
+.stage textarea {
+  font: inherit;
+  resize: vertical;
+}
+.stage input:disabled,
+.stage textarea:disabled {
+  opacity: 0.55;
+}
+.stage .row {
+  display: flex;
+  gap: 8px;
+}
+.stage-note {
+  min-height: 20px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+.work {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.work-slot {
+  min-height: 0;
+}
+.fill.indeterminate {
+  width: 40%;
+  animation: sweep 1.4s ease-in-out infinite alternate;
+}
+@keyframes sweep {
+  from {
+    margin-left: 0;
+  }
+  to {
+    margin-left: 60%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fill.indeterminate {
+    animation: none;
+    width: 100%;
+  }
+}
+
+/* The section strip */
+.strip {
+  display: flex;
+  gap: 4px;
+  min-height: 64px;
+}
+.sec {
+  font: inherit;
+  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 56px;
+  text-align: left;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-bottom: 4px solid var(--ok);
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.sec.changed {
+  border-bottom-color: var(--warn);
+}
+.sec.inserted {
+  border-bottom-color: var(--brand);
+}
+.sec.on {
+  outline: 2px solid var(--brand);
+  outline-offset: -1px;
+}
+.sec:disabled {
+  cursor: not-allowed;
+}
+.sec-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sec-bars {
+  font-size: 11px;
+  color: var(--muted-fg);
+}
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 280px;
+}
+.changes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.change-list,
+.version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.change {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.change .tag {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 7px;
+  color: var(--muted-fg);
+}
+.change.changed .tag {
+  border-color: var(--warn);
+}
+.change.inserted .tag {
+  border-color: var(--brand);
+}
+.change.deleted .tag {
+  border-color: var(--bad);
+}
+.version {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.version.current {
+  border-color: var(--brand);
+}
+
+/* Produce */
+.lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 40px;
+}
+.lane {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--brand);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lane.layer {
+  border-left-color: var(--warn);
+}
+.lane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lane-name {
+  font-weight: 600;
+}
+.sfx-form {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.sfx-form .field.grow {
+  flex: 1;
+  min-width: 200px;
+}
+.sfx-form .field.narrow {
+  width: 92px;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
+}
+
+/* Mix */
+.tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 60px;
+}
+.mixrow {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.2fr) 2fr 1.4fr auto auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.mixrow.silent {
+  opacity: 0.5;
+}
+@media (max-width: 760px) {
+  .mixrow {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.track-name {
+  font-weight: 600;
+}
+.knob {
+  display: grid;
+  grid-template-columns: 38px 1fr 62px;
+  align-items: center;
+  gap: 6px;
+}
+.readout {
+  font: 12px var(--mono);
+  color: var(--muted-fg);
+  text-align: right;
+}
+.toggle[aria-pressed="true"] {
+  background: var(--brand);
+  color: var(--brand-fg);
+  border-color: var(--brand);
+}
+.toggle.mute[aria-pressed="true"] {
+  background: var(--bad);
+  border-color: var(--bad);
+}
+
+.notice[hidden] {
+  display: none;
+}

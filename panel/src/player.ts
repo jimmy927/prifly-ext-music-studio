@@ -1,6 +1,7 @@
 /**
- * A sketch's player. The host serves no audio files, so the audio comes from
- * `api/media` as base64 in JSON, becomes a Blob and plays from its URL.
+ * A player for one audio file of a project. The host serves no audio files, so
+ * the audio comes from `api/media` as base64 in JSON, becomes a Blob and plays
+ * from its URL.
  */
 
 import { call, errorText } from "./api";
@@ -16,12 +17,34 @@ function blobUrl(base64: string, mime: string): string {
   return URL.createObjectURL(new Blob([bytes], { type: mime }));
 }
 
-/** A play button, a seek bar and the time, for one sketch. */
-export function player(project: string, sketch: string): HTMLElement {
+export type Kind = "sketch" | "version" | "stem" | "layer" | "mix";
+
+/** The file's bytes and type from the extension. */
+export async function fetchMedia(
+  project: string,
+  kind: Kind,
+  id: string,
+): Promise<{ mime: string; base64: string }> {
+  return await call<{ mime: string; base64: string }>(
+    `media?project=${encodeURIComponent(project)}&kind=${kind}&id=${encodeURIComponent(id)}`,
+  );
+}
+
+/** A play button, a seek bar and the time, for one file. `label` names it for assistive tech. */
+export function player(
+  project: string,
+  id: string,
+  kind: Kind = "sketch",
+  label = "",
+): HTMLElement {
   const audio = new Audio();
   const button = h(
     "button",
-    { type: "button", class: "play", "aria-label": `Play sketch ${sketch.toUpperCase()}` },
+    {
+      type: "button",
+      class: "play",
+      "aria-label": `Play ${label === "" ? `sketch ${id.toUpperCase()}` : label}`,
+    },
     icon("play", 18),
   );
   const seek = h("input", {
@@ -52,9 +75,7 @@ export function player(project: string, sketch: string): HTMLElement {
       button.disabled = true;
       note.textContent = "Loading…";
       try {
-        const media = await call<{ mime: string; base64: string }>(
-          `media?project=${encodeURIComponent(project)}&sketch=${encodeURIComponent(sketch)}`,
-        );
+        const media = await fetchMedia(project, kind, id);
         audio.src = blobUrl(media.base64, media.mime);
         loaded = true;
         note.textContent = "";
@@ -78,4 +99,9 @@ export function player(project: string, sketch: string): HTMLElement {
   audio.addEventListener("pause", () => show("play"));
 
   return h("div", { class: "player" }, button, seek, time, note);
+}
+
+/** Stops whatever plays, so the mix preview and a player never sound together. */
+export function stopPlayers(): void {
+  playing?.pause();
 }

@@ -5,7 +5,14 @@ import { BRIEF, happy, world } from "./world";
 
 test("both tools are registered under their names", () => {
   const w = world(happy);
-  expect(w.fake.tools().map((tool) => tool.name)).toEqual(["music_sketch", "music_library"]);
+  expect(w.fake.tools().map((tool) => tool.name)).toEqual([
+    "music_sketch",
+    "music_library",
+    "music_arrange",
+    "music_stems",
+    "music_sfx",
+    "music_mix",
+  ]);
 });
 
 test("music_sketch asks first; on cancel it says so and makes nothing", async () => {

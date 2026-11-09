@@ -1,8 +1,9 @@
 /** The header line (credits and keys) and the stage bar. */
 
+import { LYRIA_REASON } from "../../project/reasons";
 import { call, errorText, type Status } from "./api";
 import { type Child, h, icon } from "./dom";
-import { app, redraw, type View } from "./state";
+import { app, redraw, STAGES, type View } from "./state";
 
 export async function loadStatus(): Promise<void> {
   try {
@@ -77,9 +78,9 @@ const GROUPS: { name: string; tabs: Tab[] }[] = [
     name: "Song",
     tabs: [
       { id: "idea", label: "Idea" },
-      { id: "arrange", label: "Arrange", slice: 2 },
-      { id: "produce", label: "Produce", slice: 3 },
-      { id: "mix", label: "Mix", slice: 3 },
+      { id: "arrange", label: "Arrange" },
+      { id: "produce", label: "Produce" },
+      { id: "mix", label: "Mix" },
       { id: "master", label: "Master", slice: 4 },
     ],
   },
@@ -110,17 +111,42 @@ function tab(each: Tab): HTMLElement {
       each.label,
     );
   }
-  const on = app.view === "idea";
+  const view = each.id as View;
+  const gated = STAGES.includes(view) ? gate(view) : { enabled: true, reason: null };
+  const on = app.view === view;
   return h(
     "button",
     {
       type: "button",
       class: `tab${on ? " on" : ""}`,
       "aria-current": on ? "page" : "false",
-      onclick: () => go("idea"),
+      "data-stage": each.id,
+      disabled: !gated.enabled,
+      "aria-disabled": String(!gated.enabled),
+      ...(gated.reason === null ? {} : { title: gated.reason }),
+      onclick: () => go(view),
     },
     each.label,
   );
+}
+
+/** Whether a stage's tab is on, and why not. Arrange needs a chosen ElevenLabs sketch; Produce and Mix need any chosen sketch. */
+export function gate(view: View): { enabled: boolean; reason: string | null } {
+  const project = app.project;
+  if (project === null || project.chosen === null)
+    return { enabled: false, reason: "Choose a sketch on the Idea stage first." };
+  if (view === "arrange") {
+    const engine = project.sketchList.find((each) => each.id === project.chosen)?.engine;
+    if (engine !== "elevenlabs") return { enabled: false, reason: LYRIA_REASON };
+  }
+  return { enabled: true, reason: null };
+}
+
+/** The reason Arrange is off, in words on the page (not only in a tooltip); empty when nothing is off for a reason worth saying. */
+function stageNote(): string {
+  if (app.project === null)
+    return "Open a project from the Library to use Arrange, Produce and Mix.";
+  return gate("arrange").reason ?? "";
 }
 
 export function go(view: View): void {
@@ -130,7 +156,7 @@ export function go(view: View): void {
 
 export function renderStageBar(): HTMLElement {
   const library = app.view === "library";
-  return h(
+  const nav = h(
     "nav",
     { class: "stagebar", "aria-label": "Stages", "data-part": "stagebar" },
     ...GROUPS.map((group) =>
@@ -154,4 +180,11 @@ export function renderStageBar(): HTMLElement {
       "Library",
     ),
   );
+  // Always there, empty when there is nothing to say, so the page below never moves.
+  const note = h(
+    "p",
+    { class: "stage-note", "data-part": "stage-note", role: "status" },
+    stageNote(),
+  );
+  return h("div", { class: "bar-wrap" }, nav, note);
 }

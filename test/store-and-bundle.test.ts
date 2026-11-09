@@ -75,7 +75,14 @@ test("activate registers the tools and the panel module answers its routes", asy
     secrets: {},
   });
   const stop = activate(fake.api);
-  expect(fake.tools().map((tool) => tool.name)).toEqual(["music_sketch", "music_library"]);
+  expect(fake.tools().map((tool) => tool.name)).toEqual([
+    "music_sketch",
+    "music_library",
+    "music_arrange",
+    "music_stems",
+    "music_sfx",
+    "music_mix",
+  ]);
   expect(await panel("studio", { path: "library", query: {}, body: null })).toEqual({
     projects: [],
   });

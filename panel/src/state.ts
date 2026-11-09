@@ -3,7 +3,10 @@
 import { type Brief, EMPTY_BRIEF } from "../../project/brief";
 import type { Job, ListItem, ProjectView, Status } from "./api";
 
-export type View = "idea" | "library";
+export type View = "idea" | "library" | "arrange" | "produce" | "mix";
+
+/** The views that work on one project's audio. */
+export const STAGES: readonly View[] = ["arrange", "produce", "mix"];
 export type Notice = { tone: "info" | "warn" | "error"; text: string };
 
 export type Refusal = { message: string; suggestion: string | null };
@@ -36,7 +39,7 @@ export const app: App = {
   library: { projects: null, query: "", error: null },
 };
 
-type Region = "all" | "head" | "idea" | "library";
+type Region = "all" | "head" | "idea" | "library" | "stage";
 const listeners = new Set<(region: Region) => void>();
 
 export const onRedraw = (listener: (region: Region) => void): void => void listeners.add(listener);

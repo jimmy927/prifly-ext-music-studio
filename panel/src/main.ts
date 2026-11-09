@@ -4,11 +4,15 @@
  * `prifly-look` message and overrides the tokens in style.css.
  */
 
+import { mountArrange } from "./arrange";
 import { h } from "./dom";
 import { loadStatus, renderHeader, renderStageBar } from "./header";
 import { mountIdea } from "./idea";
 import { loadLibrary, mountLibrary } from "./library";
-import { app, onRedraw } from "./state";
+import { mountMix } from "./mix";
+import { mountProduce } from "./produce";
+import { app, onRedraw, STAGES } from "./state";
+import { clearWork } from "./work";
 
 const LOOK: Record<string, string> = {
   "--background": "--bg",
@@ -54,6 +58,12 @@ document.body.replaceChildren(root);
 
 const idea = mountIdea();
 const library = mountLibrary();
+const stages = { arrange: mountArrange(), produce: mountProduce(), mix: mountMix() };
+
+/** The mounted stage page for the current view, or null on Idea and Library. */
+function stage() {
+  return STAGES.includes(app.view) ? stages[app.view as keyof typeof stages] : null;
+}
 
 function drawHead(): void {
   statusSlot.replaceChildren(renderHeader());
@@ -61,8 +71,12 @@ function drawHead(): void {
 }
 
 function drawBody(): void {
-  body.replaceChildren(app.view === "idea" ? idea.root : library.root);
-  if (app.view === "idea") idea.sync();
+  const current = stage();
+  body.replaceChildren(current?.root ?? (app.view === "idea" ? idea.root : library.root));
+  if (current !== null) {
+    clearWork();
+    current.sync();
+  } else if (app.view === "idea") idea.sync();
   else void loadLibrary();
 }
 
@@ -70,6 +84,7 @@ onRedraw((region) => {
   if (region === "head" || region === "all") drawHead();
   if (region === "idea") idea.update();
   if (region === "library") library.update();
+  if (region === "stage") stage()?.update();
   if (region === "all") drawBody();
 });
 

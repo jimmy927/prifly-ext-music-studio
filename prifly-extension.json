@@ -30,6 +30,13 @@
       "default": false
     },
     {
+      "id": "ffmpegPath",
+      "label": "ffmpeg path",
+      "description": "Mix renders the final mix with ffmpeg. Leave empty to use ffmpeg from the PATH.",
+      "type": "string",
+      "default": ""
+    },
+    {
       "id": "libraryFolder",
       "label": "Library folder",
       "description": "Where each project's folder is kept. Made on the first sketch.",
