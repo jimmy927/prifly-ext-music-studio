@@ -191,17 +191,6 @@ export function titleOf(brief: Brief): string {
   return clean.length > 48 ? `${clean.slice(0, 47)}…` : clean;
 }
 
-/**
- * About how many ElevenLabs credits three 30-second sketches use. The docs
- * give no figure ("hover over the credits remaining" in ElevenLabs' app), so
- * this is an estimate, shown as one.
- */
-export const CREDITS_PER_SKETCH_ESTIMATE = 600;
-
-export function estimateCredits(engine: EngineId): number {
-  return engine === "elevenlabs" ? CREDITS_PER_SKETCH_ESTIMATE * SKETCH_COUNT : 0;
-}
-
 export function formatLength(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }

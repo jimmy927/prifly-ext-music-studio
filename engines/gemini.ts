@@ -92,6 +92,7 @@ export async function lyria(
     songId: null,
     plan: text === "" ? null : { text },
     timestamps: null,
+    title: null,
     lyrics: text === "" ? null : text,
   };
 }

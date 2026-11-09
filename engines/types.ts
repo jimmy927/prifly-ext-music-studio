@@ -13,6 +13,8 @@ export type Sketched = {
   plan: unknown;
   /** Word timestamps when the engine returned them. */
   timestamps: unknown;
+  /** The engine's own name for the track, when it gave one. */
+  title: string | null;
   /** The lyrics as text, when the engine wrote any. */
   lyrics: string | null;
 };

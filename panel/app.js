@@ -56,7 +56,6 @@ async function call(path, body) {
 var errorText = (caught) => caught instanceof Error ? caught.message : String(caught);
 
 // project/brief.ts
-var SKETCH_COUNT = 3;
 var SKETCH_IDS = ["a", "b", "c"];
 var ENGINES = ["elevenlabs", "lyria-clip"];
 var ENGINE_LABELS = {
@@ -139,10 +138,6 @@ var EMPTY_BRIEF = {
   lyrics: "",
   engine: "elevenlabs"
 };
-var CREDITS_PER_SKETCH_ESTIMATE = 600;
-function estimateCredits(engine) {
-  return engine === "elevenlabs" ? CREDITS_PER_SKETCH_ESTIMATE * SKETCH_COUNT : 0;
-}
 function formatLength(seconds) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
@@ -419,6 +414,7 @@ async function choose(project, sketch) {
   }
   redraw("idea");
 }
+var cardTitle = (letter, title) => title === null ? `Sketch ${letter}` : `Sketch ${letter} · ${title}`;
 function slot(id, index) {
   const letter = id.toUpperCase();
   const project = app.project;
@@ -431,7 +427,7 @@ function slot(id, index) {
     return h("li", { class: `card ghost${now ? " busy" : ""}`, "data-sketch": id }, h("div", { class: "card-title" }, text), now && h("div", { class: "bar-busy" }));
   }
   const chosen = project.chosen === id;
-  return h("li", { class: `card${chosen ? " chosen" : ""}`, "data-sketch": id }, h("div", { class: "card-head" }, h("div", { class: "card-title" }, `Sketch ${letter}`), chosen ? h("span", { class: "badge" }, icon("check", 14), "Chosen") : h("button", { type: "button", class: "btn small", onclick: () => void choose(project.id, id) }, "Mark as chosen")), player(project.id, id), h("div", { class: "meta" }, ENGINE_LABELS[made.engine], " · 0:30"), made.lyrics === null ? null : h("details", { class: "lyrics" }, h("summary", null, "Lyrics"), h("pre", null, made.lyrics)));
+  return h("li", { class: `card${chosen ? " chosen" : ""}`, "data-sketch": id }, h("div", { class: "card-head" }, h("div", { class: "card-title" }, cardTitle(letter, made.title)), chosen ? h("span", { class: "badge" }, icon("check", 14), "Chosen") : h("button", { type: "button", class: "btn small", onclick: () => void choose(project.id, id) }, "Mark as chosen")), player(project.id, id), h("div", { class: "meta" }, ENGINE_LABELS[made.engine], " · 0:30"), made.lyrics === null ? null : h("details", { class: "lyrics" }, h("summary", null, "Lyrics"), h("pre", null, made.lyrics)));
 }
 function progress(cancel, cancelling) {
   if (app.confirming) {
@@ -470,10 +466,6 @@ function blocker() {
   if (app.draft.engine === "elevenlabs") {
     if (!status.elevenlabs.keySet)
       return "No ElevenLabs key. Add it in Settings → Extensions → Music Studio.";
-    const left = status.elevenlabs.credits?.left;
-    if (left !== undefined && left < estimateCredits("elevenlabs")) {
-      return `Out of credits: ${left.toLocaleString("en-US")} left, about ${estimateCredits("elevenlabs").toLocaleString("en-US")} needed.`;
-    }
   } else if (!status.gemini.keySet) {
     return "No Gemini key. Add it in Settings → Extensions → Music Studio.";
   }
@@ -595,7 +587,7 @@ function mountIdea() {
     const reason = blocker();
     button.disabled = reason !== null;
     why.textContent = reason ?? "";
-    cost.textContent = app.draft.engine === "elevenlabs" ? `Costs about ${estimateCredits("elevenlabs").toLocaleString("en-US")} ElevenLabs credits (estimate). You confirm first.` : "Billed to your Gemini key. You confirm first.";
+    cost.textContent = app.draft.engine === "elevenlabs" ? "Billed by ElevenLabs to your plan. You confirm first." : "Billed to your Gemini key. You confirm first.";
     fill(messages, ...notices());
     fill(side, renderSketches(() => void cancel(), cancelling));
   }

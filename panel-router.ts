@@ -45,6 +45,7 @@ async function projectView(studio: Studio, id: unknown) {
       engine: each.engine,
       songId: each.songId,
       lyrics: each.lyrics,
+      title: each.title ?? null,
       created: each.created,
     })),
   };

@@ -1,6 +1,5 @@
 /** The Idea stage: the form on the left, the sketches on the right, and the states between. */
 
-import { estimateCredits } from "../../project/brief";
 import { call, errorText, type Job, type ProjectView, type SketchAnswer } from "./api";
 import { type Child, fill, h, icon } from "./dom";
 import { buildForm } from "./form";
@@ -24,10 +23,6 @@ export function blocker(): string | null {
   if (app.draft.engine === "elevenlabs") {
     if (!status.elevenlabs.keySet)
       return "No ElevenLabs key. Add it in Settings → Extensions → Music Studio.";
-    const left = status.elevenlabs.credits?.left;
-    if (left !== undefined && left < estimateCredits("elevenlabs")) {
-      return `Out of credits: ${left.toLocaleString("en-US")} left, about ${estimateCredits("elevenlabs").toLocaleString("en-US")} needed.`;
-    }
   } else if (!status.gemini.keySet) {
     return "No Gemini key. Add it in Settings → Extensions → Music Studio.";
   }
@@ -198,7 +193,7 @@ export function mountIdea(): { root: HTMLElement; update: () => void; sync: () =
     why.textContent = reason ?? "";
     cost.textContent =
       app.draft.engine === "elevenlabs"
-        ? `Costs about ${estimateCredits("elevenlabs").toLocaleString("en-US")} ElevenLabs credits (estimate). You confirm first.`
+        ? "Billed by ElevenLabs to your plan. You confirm first."
         : "Billed to your Gemini key. You confirm first.";
     fill(messages, ...notices());
     fill(

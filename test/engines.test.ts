@@ -3,14 +3,23 @@ import { composeDetailed, credits, errorFrom } from "../engines/elevenlabs";
 import { decodeInteraction, lyria } from "../engines/gemini";
 import { boundaryOf, parseMultipart } from "../engines/multipart";
 import { EngineError } from "../engines/types";
-import { AUDIO, detailedReply, lyriaReply, multipart, subscription, world } from "./world";
+import {
+  AUDIO,
+  detailedJson,
+  detailedReply,
+  lyriaReply,
+  multipart,
+  REAL_SONG_ID,
+  realReply,
+  subscription,
+  world,
+} from "./world";
 
 const REQUEST = { prompt: "lo-fi beat", lengthMs: 30000, instrumental: true };
 
-test("composeDetailed sends the documented request and reads the multipart answer", async () => {
+test("composeDetailed sends the documented request", async () => {
   const w = world(() => detailedReply("abc"));
-  const key = "xi-test";
-  const made = await composeDetailed(w.studio.deps.fetch, key, REQUEST);
+  await composeDetailed(w.studio.deps.fetch, "xi-test", REQUEST);
   const call = w.calls[0];
   expect(call?.url).toBe("https://api.elevenlabs.io/v1/music/detailed");
   expect(call?.method).toBe("POST");
@@ -23,34 +32,50 @@ test("composeDetailed sends the documented request and reads the multipart answe
     store_for_inpainting: true,
     with_timestamps: true,
   });
-  expect(made.songId).toBe("abc");
-  expect(Array.from(made.audio)).toEqual(Array.from(AUDIO));
-  expect(made.lyrics).toBe("[Verse]\nla la\nna na");
-  expect(made.timestamps).toEqual([{ word: "la", start_s: 1, end_s: 1.4 }]);
 });
 
-test("the song id may come from a response header instead of the JSON", async () => {
-  const w = world(() => {
-    const reply = multipart({ composition_plan: { sections: [] } }, AUDIO);
-    return new Response(reply.body, {
-      headers: { "content-type": reply.headers.get("content-type") ?? "", "song-id": "hdr9" },
-    });
-  });
+test("a real recorded reply: song id from the header only, title, plan, no lyrics", async () => {
+  const w = world(realReply);
   const made = await composeDetailed(w.studio.deps.fetch, "k", REQUEST);
-  expect(made.songId).toBe("hdr9");
+  expect(made.songId).toBe(REAL_SONG_ID);
+  expect(made.title).toBe("Minor Lift");
+  expect(made.timestamps).toEqual([]);
   expect(made.lyrics).toBeNull();
+  const plan = made.plan as { chunks: { text: string; duration_ms: number }[] };
+  expect(plan.chunks[0]?.text).toBe("[Instrumental Main]");
+  expect(plan.chunks[0]?.duration_ms).toBe(30000);
+  expect(made.ext).toBe("mp3");
+  // The cut MP3 keeps its ID3 start and its bytes up to the closing boundary.
+  expect(made.audio).toHaveLength(64);
+  expect(Buffer.from(made.audio).subarray(0, 3).toString()).toBe("ID3");
 });
 
-test("multipart bytes survive: CRLF, NUL and dashes inside the audio", () => {
+test("the song id is not read from the JSON, and words come from words_timestamps", async () => {
+  const w = world(() =>
+    multipart(
+      {
+        ...detailedJson("[Verse]\nla la\nna na"),
+        song_id: "from-json",
+        words_timestamps: [{ word: "la" }],
+      },
+      AUDIO,
+    ),
+  );
+  const made = await composeDetailed(w.studio.deps.fetch, "k", REQUEST);
+  expect(made.songId).toBeNull();
+  expect(made.timestamps).toEqual([{ word: "la" }]);
+  expect(made.lyrics).toBe("[Verse]\nla la\nna na");
+  expect(Array.from(made.audio)).toEqual(Array.from(AUDIO));
+});
+
+test("multipart bytes survive: CRLF, NUL and dashes inside the audio", async () => {
   const response = detailedReply();
   const boundary = boundaryOf(response.headers.get("content-type"));
-  expect(boundary).toBe("XBOUNDARYX");
-  return response.arrayBuffer().then((buffer) => {
-    const parts = parseMultipart(new Uint8Array(buffer), boundary ?? "");
-    expect(parts).toHaveLength(2);
-    expect(parts[0]?.headers["content-type"]).toBe("application/json");
-    expect(Array.from(parts[1]?.body ?? [])).toEqual(Array.from(AUDIO));
-  });
+  expect(boundary).toBe("----boundaryXYZ");
+  const parts = parseMultipart(new Uint8Array(await response.arrayBuffer()), boundary ?? "");
+  expect(parts).toHaveLength(2);
+  expect(parts[0]?.headers["content-type"]).toBe("application/json");
+  expect(Array.from(parts[1]?.body ?? [])).toEqual(Array.from(AUDIO));
 });
 
 test("a body without parts is refused", () => {

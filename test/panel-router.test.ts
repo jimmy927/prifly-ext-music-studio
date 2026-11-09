@@ -58,8 +58,8 @@ test("Sketch 3 ideas: one confirm card with the cost, three sketches, playable, 
   if (!started.ok) throw new Error(started.message);
   expect(w.fake.confirms).toHaveLength(1);
   expect(w.fake.confirms[0]?.title).toBe("Sketch 3 ideas");
-  expect(w.fake.confirms[0]?.summary).toContain("1,800");
-  expect(w.fake.confirms[0]?.summary).toContain("39,000 left");
+  expect(w.fake.confirms[0]?.summary).toContain("billed by ElevenLabs to your plan");
+  expect(w.fake.confirms[0]?.summary).toContain("no per-track price");
   const job = await finished(w, started.job.id);
   expect(job.status).toBe("done");
   expect(job.done).toEqual(["a", "b", "c"]);
@@ -129,13 +129,32 @@ test("no key: the answer points at Settings and nothing is asked or sent", async
   expect(w.calls).toHaveLength(0);
 });
 
-test("out of credits: refused before any card", async () => {
+test("low credits are information only: the card is still asked and the run goes on", async () => {
   const w = world((call) =>
-    call.url.endsWith("/v1/user/subscription") ? subscription(39800, 40000) : detailedReply(),
+    call.url.endsWith("/v1/user/subscription") ? subscription(39990, 40000) : detailedReply(),
   );
   const answer = (await ask(w, "sketch", {}, BRIEF)) as Started;
-  expect(answer).toMatchObject({ ok: false, reason: "out_of_credits" });
-  expect(w.fake.confirms).toHaveLength(0);
+  if (!answer.ok) throw new Error(answer.message);
+  expect(w.fake.confirms).toHaveLength(1);
+  expect((await finished(w, answer.job.id)).status).toBe("done");
+});
+
+test("when ElevenLabs itself says the credits are gone, the job fails with its message", async () => {
+  const w = world(() =>
+    Response.json(
+      { detail: { status: "quota_exceeded", message: "Out of credits." } },
+      { status: 401 },
+    ),
+  );
+  const started = (await ask(w, "sketch", {}, BRIEF)) as Started;
+  if (!started.ok) throw new Error(started.message);
+  const job = await finished(w, started.job.id);
+  expect(job).toMatchObject({
+    status: "failed",
+    kind: "credits",
+    error: "Out of credits.",
+    project: null,
+  });
 });
 
 test("a refused prompt ends the job with ElevenLabs' suggestion and leaves no project", async () => {

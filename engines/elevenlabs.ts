@@ -48,8 +48,8 @@ export function errorFrom(status: number, text: string): EngineError {
     const suggestion = isRecord(data) ? asString(data["prompt_suggestion"]) : null;
     return new EngineError("bad_prompt", message, suggestion);
   }
-  if (status === 401 || code === "invalid_api_key") return new EngineError("auth", message);
   if (status === 402 || code === "quota_exceeded") return new EngineError("credits", message);
+  if (status === 401 || code === "invalid_api_key") return new EngineError("auth", message);
   return new EngineError("http", message);
 }
 
@@ -72,21 +72,10 @@ function audioPart(parts: Part[]): Uint8Array {
   return found.body;
 }
 
-/** The song id: in the JSON (top level or `song_metadata`), else in a header of the reply or the audio part. */
-function songIdOf(json: Record<string, unknown>, response: Response, parts: Part[]): string | null {
+/** The title ElevenLabs gave the song (`song_metadata.title`), or null. */
+function titleOf(json: Record<string, unknown>): string | null {
   const meta = json["song_metadata"];
-  return (
-    asString(json["song_id"]) ??
-    (isRecord(meta) ? asString(meta["song_id"]) : null) ??
-    response.headers.get("song-id") ??
-    parts.map((part) => part.headers["song-id"]).find((id) => id !== undefined) ??
-    null
-  );
-}
-
-/** The word timestamps, under whichever key the JSON carries them. */
-function timestampsOf(json: Record<string, unknown>): unknown {
-  return json["words_timestamps"] ?? json["timestamps"] ?? json["word_timestamps"] ?? null;
+  return isRecord(meta) ? asString(meta["title"]) : null;
 }
 
 /** Composes one 30-second (or any length) track; paid. */
@@ -112,27 +101,28 @@ export async function composeDetailed(
   return {
     audio: audioPart(parts),
     ext: "mp3",
-    songId: songIdOf(json, response, parts),
+    // The song id comes only in the response header `song-id`; the JSON has none.
+    songId: response.headers.get("song-id"),
     plan,
-    timestamps: timestampsOf(json),
+    timestamps: json["words_timestamps"] ?? null,
+    title: titleOf(json),
     lyrics: linesOf(plan),
   };
 }
 
-/** The lyric lines of a composition plan, as text, or null when it has none. */
+const SECTION_TAG = /^\s*\[[^\]]*\]\s*$/;
+
+/** The lyrics in a composition plan's chunks, as text; null for an instrumental (chunks that are only a section tag). */
 export function linesOf(plan: unknown): string | null {
-  if (!isRecord(plan)) return null;
-  const sections = plan["sections"];
-  if (!Array.isArray(sections)) return null;
-  const out: string[] = [];
-  for (const section of sections) {
-    if (!isRecord(section) || !Array.isArray(section["lines"])) continue;
-    const lines = section["lines"].filter((line): line is string => typeof line === "string");
-    if (lines.length === 0) continue;
-    const name = asString(section["section_name"]);
-    out.push(name === null ? lines.join("\n") : `[${name}]\n${lines.join("\n")}`);
-  }
-  return out.length === 0 ? null : out.join("\n\n");
+  const chunks = isRecord(plan) ? plan["chunks"] : null;
+  if (!Array.isArray(chunks)) return null;
+  const texts = chunks
+    .map((chunk) => (isRecord(chunk) ? asString(chunk["text"]) : null))
+    .filter((text): text is string => text !== null)
+    .filter((text) =>
+      text.split("\n").some((line) => line.trim() !== "" && !SECTION_TAG.test(line)),
+    );
+  return texts.length === 0 ? null : texts.join("\n\n");
 }
 
 export type Credits = { left: number; limit: number; used: number; tier: string };

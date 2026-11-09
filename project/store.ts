@@ -46,6 +46,7 @@ export type SketchRecord = {
   plan: unknown;
   timestamps: unknown;
   lyrics: string | null;
+  title: string | null;
   file: string;
   created: string;
 };
@@ -170,6 +171,7 @@ export class Store {
       plan: made.plan,
       timestamps: made.timestamps,
       lyrics: made.lyrics,
+      title: made.title,
       file,
       created: new Date().toISOString(),
     };

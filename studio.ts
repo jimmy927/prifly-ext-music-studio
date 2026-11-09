@@ -13,7 +13,6 @@ import {
   buildPrompt,
   ENGINE_LABELS,
   type EngineId,
-  estimateCredits,
   parseBrief,
   SKETCH_IDS,
   SKETCH_MS,
@@ -123,7 +122,7 @@ export type Started =
   | { ok: true; job: Job; finished: Promise<Job> }
   | {
       ok: false;
-      reason: "invalid" | "no_key" | "out_of_credits" | "cancelled" | "unsupported" | "failed";
+      reason: "invalid" | "no_key" | "cancelled" | "unsupported" | "failed";
       message: string;
     };
 
@@ -134,14 +133,11 @@ const fail = (reason: Extract<Started, { ok: false }>["reason"], message: string
 });
 
 /** The confirm card's words for a sketch run. */
-export function confirmSpec(
-  brief: Brief,
-  left: number | null,
-): Parameters<NonNullable<ExtensionApi["confirm"]>>[0] {
+export function confirmSpec(brief: Brief): Parameters<NonNullable<ExtensionApi["confirm"]>>[0] {
   const engine = ENGINE_LABELS[brief.engine];
   const cost =
     brief.engine === "elevenlabs"
-      ? `about ${estimateCredits("elevenlabs").toLocaleString("en-US")} ElevenLabs credits (an estimate; ElevenLabs does not publish a price per track)${left === null ? "" : `, ${left.toLocaleString("en-US")} left`}`
+      ? "billed by ElevenLabs to your plan (its API gives no per-track price, so none is shown)"
       : "billed to your Gemini key (Google's price per clip is not shown here)";
   return {
     title: "Sketch 3 ideas",
@@ -205,28 +201,6 @@ async function run(
   return job;
 }
 
-/** The credits ElevenLabs has left, or the refusal when the key is bad or the credits will not cover the run. */
-async function creditsCheck(
-  studio: Studio,
-  key: string,
-): Promise<{ left: number | null } | Extract<Started, { ok: false }>> {
-  let left: number | null = null;
-  try {
-    left = (await elevenCredits(studio.deps.fetch, key)).left;
-  } catch (caught) {
-    // Any other failure only means the figure is unknown; the run itself will say.
-    if (caught instanceof EngineError && caught.kind === "auth") {
-      return { ok: false, reason: "no_key", message: `${caught.message} ${SETTINGS_HINT}` };
-    }
-  }
-  const needed = estimateCredits("elevenlabs");
-  if (left !== null && left < needed) {
-    const message = `ElevenLabs has ${left.toLocaleString("en-US")} credits left, fewer than the estimated ${needed.toLocaleString("en-US")}.`;
-    return { ok: false, reason: "out_of_credits", message };
-  }
-  return { left };
-}
-
 /**
  * "Sketch 3 ideas": checks, asks the reader, and starts the run. Nothing is
  * spent before the reader confirms. `linked` aborts the run when it fires
@@ -244,16 +218,10 @@ export async function startSketch(
     const which = brief.engine === "elevenlabs" ? "ElevenLabs" : "Gemini";
     return fail("no_key", `There is no ${which} key. ${SETTINGS_HINT}`);
   }
-  let left: number | null = null;
-  if (brief.engine === "elevenlabs") {
-    const checked = await creditsCheck(studio, key);
-    if ("ok" in checked) return checked;
-    left = checked.left;
-  }
   const api = studio.api();
   if (api.confirm === undefined)
     return fail("unsupported", "This prifly cannot ask you first. Update prifly.");
-  if (!(await api.confirm(confirmSpec(brief, left))))
+  if (!(await api.confirm(confirmSpec(brief))))
     return fail("cancelled", "Not done: you cancelled.");
   const entry = await studio.store().create(brief, titleOf(brief));
   const job: Job = {

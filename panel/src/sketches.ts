@@ -15,6 +15,9 @@ async function choose(project: string, sketch: SketchId): Promise<void> {
   redraw("idea");
 }
 
+const cardTitle = (letter: string, title: string | null): string =>
+  title === null ? `Sketch ${letter}` : `Sketch ${letter} · ${title}`;
+
 function slot(id: SketchId, index: number): Child {
   const letter = id.toUpperCase();
   const project = app.project;
@@ -42,7 +45,7 @@ function slot(id: SketchId, index: number): Child {
     h(
       "div",
       { class: "card-head" },
-      h("div", { class: "card-title" }, `Sketch ${letter}`),
+      h("div", { class: "card-title" }, cardTitle(letter, made.title)),
       chosen
         ? h("span", { class: "badge" }, icon("check", 14), "Chosen")
         : h(

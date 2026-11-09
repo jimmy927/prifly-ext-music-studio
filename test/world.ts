@@ -25,27 +25,65 @@ export const AUDIO = new Uint8Array([
   0x49, 0x44, 0x33, 0x0d, 0x0a, 0x00, 0xff, 0xfb, 0x90, 0x0d, 0x0a, 0x2d, 0x2d,
 ]);
 
-export function multipart(json: unknown, audio: Uint8Array, boundary = "XBOUNDARYX"): Response {
+export function multipart(
+  json: unknown,
+  audio: Uint8Array,
+  options: { boundary?: string; songId?: string } = {},
+): Response {
+  const boundary = options.boundary ?? "----boundaryXYZ";
   const head = Buffer.from(
-    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(json)}\r\n--${boundary}\r\nContent-Type: audio/mpeg\r\nContent-Disposition: attachment; filename="song.mp3"\r\n\r\n`,
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(json)}\r\n--${boundary}\r\nContent-Type: audio/mpeg\r\nContent-Disposition: attachment; filename="music.mp3"\r\n\r\n`,
   );
   const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
   return new Response(Buffer.concat([head, Buffer.from(audio), tail]), {
-    headers: { "content-type": `multipart/mixed; boundary=${boundary}` },
+    headers: {
+      "content-type": `multipart/mixed; boundary=${boundary}`,
+      ...(options.songId === undefined ? {} : { "song-id": options.songId }),
+    },
   });
 }
 
-export const detailedReply = (songId = "song123"): Response =>
-  multipart(
-    {
-      song_id: songId,
-      composition_plan: {
-        sections: [{ section_name: "Verse", duration_ms: 30000, lines: ["la la", "na na"] }],
+/** The JSON part as ElevenLabs sends it (checked against a real reply): no song id in it. */
+export const detailedJson = (text = "[Instrumental Main]") => ({
+  composition_plan: {
+    chunks: [
+      {
+        text,
+        duration_ms: 30000,
+        positive_styles: ["122 BPM"],
+        negative_styles: [],
+        context_adherence: "high",
+        conditioning_ref: null,
+        condition_strength: null,
       },
-      song_metadata: { title: "Test" },
-      words_timestamps: [{ word: "la", start_s: 1, end_s: 1.4 }],
+    ],
+  },
+  song_metadata: {
+    title: "Minor Lift",
+    description: "d",
+    genres: ["pop"],
+    languages: [],
+    is_explicit: false,
+  },
+  words_timestamps: [],
+  waveform_visual: null,
+});
+
+export const detailedReply = (songId = "song123"): Response =>
+  multipart(detailedJson(), AUDIO, { songId });
+
+/** A real reply recorded from /v1/music/detailed, its MP3 cut to 64 bytes. */
+export const REAL_SONG_ID = "uWQ2BbJ4wWtp6GVbkNi4";
+export const REAL_BOUNDARY = "----boundary05c71529117a4ed2bb9c7fe36dfaaa70";
+export const realReply = async (): Promise<Response> =>
+  new Response(
+    await Bun.file(join(import.meta.dir, "fixtures", "detailed-reply.bin")).arrayBuffer(),
+    {
+      headers: {
+        "content-type": `multipart/mixed; boundary=${REAL_BOUNDARY}`,
+        "song-id": REAL_SONG_ID,
+      },
     },
-    AUDIO,
   );
 
 export const lyriaReply = (): Response =>

@@ -6,8 +6,8 @@
   "description": "A prifly extension: take a song idea through sketches, arrangement, mixing and mastering, and on to a music video, in one panel.",
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit",
-    "check": "biome check .",
+    "typecheck": "bun --bun tsc --noEmit",
+    "check": "bun --bun biome check .",
     "build:panel": "bun run scripts/build-panel.ts"
   },
   "devDependencies": {

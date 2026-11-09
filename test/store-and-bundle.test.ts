@@ -16,6 +16,7 @@ const made = {
   plan: { p: 1 },
   timestamps: null,
   lyrics: null,
+  title: "Minor Lift",
 };
 
 test("a project is a folder with brief.json and sketches/<x>.mp3 and <x>.json, indexed in state", async () => {

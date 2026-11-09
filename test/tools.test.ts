@@ -26,7 +26,7 @@ test("music_sketch confirmed: returns the file paths and can copy them to the sc
     copyToScratchpad: true,
   });
   expect(w.fake.confirms).toHaveLength(1);
-  expect(w.fake.confirms[0]?.summary).toContain("credits");
+  expect(w.fake.confirms[0]?.summary).toContain("billed by ElevenLabs");
   expect(text).toContain("Made 3 sketches.");
   const paths = text
     .split("\n")

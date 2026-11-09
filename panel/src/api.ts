@@ -9,7 +9,7 @@ export type SketchAnswer =
   | { ok: true; job: Job }
   | {
       ok: false;
-      reason: "invalid" | "no_key" | "out_of_credits" | "cancelled" | "unsupported" | "failed";
+      reason: "invalid" | "no_key" | "cancelled" | "unsupported" | "failed";
       message: string;
     };
 
