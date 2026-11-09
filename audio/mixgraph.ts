@@ -1,6 +1,6 @@
 /**
  * The mix as data (`mix.json`) and as an ffmpeg command. The panel's live
- * preview uses the same gain and pan maths through WebAudio nodes.
+ * preview uses the same level and mute/solo rules through WebAudio nodes (its pan is a StereoPannerNode, close to but not the same as the ffmpeg pan law).
  */
 
 import { isRecord } from "../engines/types";

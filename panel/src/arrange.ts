@@ -29,6 +29,9 @@ let selected = 0;
 /** The page below is stale: the data changed (loaded, picked) and strip, editor and versions must be drawn again. */
 let dirty = false;
 
+/** The project and the sketch chosen in it: the sections are loaded for both, so a new choice reloads them. */
+const projectKey = (): string => `${app.project?.id ?? ""}:${app.project?.chosen ?? ""}`;
+
 const clock = (ms: number): string => {
   const seconds = Math.round(ms / 1000);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -48,7 +51,7 @@ function resetDraft(): void {
 async function load(): Promise<void> {
   const project = app.project;
   if (project === null) return;
-  loadedFor = project.id;
+  loadedFor = projectKey();
   try {
     view = await call<ArrangeView>(`arrange?project=${encodeURIComponent(project.id)}`);
     loadError = null;
@@ -416,7 +419,7 @@ export function mountArrange(): { root: HTMLElement; update: () => void; sync: (
     root,
     update,
     sync: () => {
-      if (app.project !== null && (loadedFor !== app.project.id || view === null)) {
+      if (app.project !== null && (loadedFor !== projectKey() || view === null)) {
         view = null;
         draft = [];
         void load();

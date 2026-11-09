@@ -63,6 +63,8 @@ export async function launch(
   if (api.confirm === undefined)
     return fail("unsupported", "This prifly cannot ask you first. Update prifly.");
   if (!(await api.confirm(work.confirm))) return fail("cancelled", "Not done: you cancelled.");
+  // Another call may have started while the card was open.
+  if (busy(studio)) return fail("invalid", "Another run is still going. Wait for it or cancel it.");
   const job: Job = {
     id: crypto.randomUUID().slice(0, 8),
     work: work.work,

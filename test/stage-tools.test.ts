@@ -142,6 +142,27 @@ test("music_mix is local: no card, levels by track name, a WAV path back", async
   );
 });
 
+test("music_arrange sections inherit from the section `from` names, so a deletion keeps the audio", async () => {
+  const w = stageWorld();
+  const project = await chosenProject(w);
+  const text = await w.callTool("music_arrange", {
+    project,
+    sections: [
+      { text: "[Intro]\nla la", from: 0 },
+      { text: "[Chorus]\nla la", from: 2 },
+    ],
+  });
+  expect(text).toContain("Made version 1");
+  const render = w.calls.filter((call) => call.url.endsWith("/v1/music/detailed")).at(-1);
+  const chunks = (
+    JSON.parse(render?.body ?? "{}") as { composition_plan: { chunks: Record<string, unknown>[] } }
+  ).composition_plan.chunks;
+  expect(chunks).toEqual([
+    { song_id: "sketch-1", range: { start_ms: 0, end_ms: 8000 } },
+    { song_id: "sketch-1", range: { start_ms: 20000, end_ms: 26000 } },
+  ]);
+});
+
 test("music_mix with ffmpeg missing says why", async () => {
   const w = stageWorld({ ffmpegPath: "/nonexistent/ffmpeg-for-test" });
   const project = await chosenProject(w);

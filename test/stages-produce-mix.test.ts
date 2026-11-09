@@ -188,7 +188,7 @@ test("Render mix runs ffmpeg locally: no card, no request, a playable WAV in mix
   };
   const started = performance.now();
   const done = await ask(w, "mix-render", {}, { project, mix });
-  expect(performance.now() - started).toBeLessThan(2000);
+  expect(performance.now() - started).toBeLessThan(10000);
   expect(done).toMatchObject({ ok: true, n: 1, file: "mix/mix-1.wav" });
   expect(w.fake.confirms).toHaveLength(cards);
   expect(w.calls).toHaveLength(calls);

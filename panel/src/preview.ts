@@ -39,6 +39,13 @@ export class Preview {
   private loadedFor = "";
   playing = false;
 
+  /** Forgets the loaded audio: stems or layers may have new files under the same names. */
+  reset(): void {
+    this.stop();
+    this.voices = [];
+    this.loadedFor = "";
+  }
+
   /** Reads the tracks' audio (once per set of tracks). */
   async load(project: string, tracks: MixTrack[], tempo: number): Promise<void> {
     const id = `${project}|${tracks.map((each) => each.key).join(",")}|${tempo}`;

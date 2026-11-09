@@ -59,15 +59,15 @@ const strings = (value: unknown, fallback: string[]): string[] =>
     ? value.filter((each): each is string => typeof each === "string")
     : fallback;
 
-/** One entry of a full `sections` list; `before` is the old section at the same position. */
-function draftFrom(item: Item, before: Section | undefined, at: number): Draft {
+/** One entry of a full `sections` list; `before` is the old section it comes from (`from`, else the same position). */
+function draftFrom(item: Item, before: Section | undefined, origin: number | null): Draft {
   return {
     text: String(item["text"] ?? before?.text ?? ""),
     durationMs: ms(item, before?.durationMs ?? 0),
     positiveStyles: strings(item["positiveStyles"], before?.positiveStyles ?? []),
     negativeStyles: strings(item["negativeStyles"], before?.negativeStyles ?? []),
     contextAdherence: before?.contextAdherence ?? "high",
-    source: "from" in item ? number(item["from"]) : before === undefined ? null : at,
+    source: before === undefined ? null : origin,
   };
 }
 
@@ -75,7 +75,8 @@ function fromSections(base: Section[], list: unknown[]): Draft[] | string {
   const out: Draft[] = [];
   for (const [at, item] of list.entries()) {
     if (!isRecord(item)) return "Each section is an object.";
-    out.push(draftFrom(item, base[at], at));
+    const origin = "from" in item ? number(item["from"]) : at;
+    out.push(draftFrom(item, origin === null ? undefined : base[origin], origin));
   }
   return out;
 }

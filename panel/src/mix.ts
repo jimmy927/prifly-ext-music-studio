@@ -358,7 +358,7 @@ export function mountMix(): { root: HTMLElement; update: () => void; sync: () =>
     update,
     sync: () => {
       if (loadedFor !== app.project?.id) view = null;
-      preview.stop();
+      preview.reset();
       previewState = "idle";
       void load();
       dirty = true;

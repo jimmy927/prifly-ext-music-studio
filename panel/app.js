@@ -610,6 +610,7 @@ var loadedFor = null;
 var draft = [];
 var selected = 0;
 var dirty = false;
+var projectKey = () => `${app.project?.id ?? ""}:${app.project?.chosen ?? ""}`;
 var clock2 = (ms) => {
   const seconds = Math.round(ms / 1000);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -623,7 +624,7 @@ async function load() {
   const project = app.project;
   if (project === null)
     return;
-  loadedFor = project.id;
+  loadedFor = projectKey();
   try {
     view = await call(`arrange?project=${encodeURIComponent(project.id)}`);
     loadError = null;
@@ -839,7 +840,7 @@ function mountArrange() {
     root,
     update,
     sync: () => {
-      if (app.project !== null && (loadedFor !== app.project.id || view === null)) {
+      if (app.project !== null && (loadedFor !== projectKey() || view === null)) {
         view = null;
         draft = [];
         load();
@@ -1225,6 +1226,11 @@ class Preview {
   sources = [];
   loadedFor = "";
   playing = false;
+  reset() {
+    this.stop();
+    this.voices = [];
+    this.loadedFor = "";
+  }
   async load(project, tracks, tempo) {
     const id = `${project}|${tracks.map((each) => each.key).join(",")}|${tempo}`;
     if (id === this.loadedFor && this.voices.length > 0)
@@ -1514,7 +1520,7 @@ function mountMix() {
     sync: () => {
       if (loadedFor2 !== app.project?.id)
         view2 = null;
-      preview.stop();
+      preview.reset();
       previewState = "idle";
       load2();
       dirty2 = true;
