@@ -1,12 +1,27 @@
 /** The page's one state object, and a way to ask for a redraw of one region. */
 
 import { type Brief, EMPTY_BRIEF } from "../../project/brief";
-import type { Job, ListItem, ProjectView, Status } from "./api";
+import type { CrateItem, Job, ListItem, ProjectView, Status } from "./api";
 
-export type View = "idea" | "library" | "arrange" | "produce" | "mix";
+export type View =
+  | "idea"
+  | "library"
+  | "arrange"
+  | "produce"
+  | "mix"
+  | "master"
+  | "prepare"
+  | "deliver";
 
 /** The views that work on one project's audio. */
-export const STAGES: readonly View[] = ["arrange", "produce", "mix"];
+export const STAGES: readonly View[] = [
+  "arrange",
+  "produce",
+  "mix",
+  "master",
+  "prepare",
+  "deliver",
+];
 export type Notice = { tone: "info" | "warn" | "error"; text: string };
 
 export type Refusal = { message: string; suggestion: string | null };
@@ -23,7 +38,14 @@ export type App = {
   confirming: boolean;
   notice: Notice | null;
   refusal: Refusal | null;
-  library: { projects: ListItem[] | null; query: string; error: string | null };
+  library: {
+    projects: ListItem[] | null;
+    query: string;
+    error: string | null;
+    /** The crate shown, "" for all projects. */
+    crate: string;
+    crates: CrateItem[];
+  };
 };
 
 export const app: App = {
@@ -36,7 +58,7 @@ export const app: App = {
   confirming: false,
   notice: null,
   refusal: null,
-  library: { projects: null, query: "", error: null },
+  library: { projects: null, query: "", error: null, crate: "", crates: [] },
 };
 
 type Region = "all" | "head" | "idea" | "library" | "stage";

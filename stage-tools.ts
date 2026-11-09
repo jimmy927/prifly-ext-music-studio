@@ -22,7 +22,7 @@ import { CANCELLED } from "./tools";
 type Tool = ExtensionTool;
 
 /** The project a call names (`project` is its id), else the newest. */
-async function projectOf(
+export async function projectOf(
   studio: Studio,
   args: Record<string, unknown>,
 ): Promise<IndexEntry | string> {

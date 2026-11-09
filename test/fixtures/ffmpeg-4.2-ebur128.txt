@@ -1,0 +1,21 @@
+Guessed Channel Layout for Input Stream #0.0 : mono
+Input #0, wav, from 't.wav':
+  Metadata:
+...
+[Parsed_ebur128_0 @ 0x5f3b788b3a40] t: 5.99998    TARGET:-23 LUFS    M: -36.1 S: -35.4     I: -35.4 LUFS       LRA:   0.0 LU  FTPK: -26.5 dBFS  TPK: -26.5 dBFS
+size=N/A time=00:00:06.00 bitrate=N/A speed= 195x    
+video:0kB audio:562kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown
+[Parsed_ebur128_0 @ 0x5f3b788b3a40] Summary:
+
+  Integrated loudness:
+    I:         -35.4 LUFS
+    Threshold: -45.4 LUFS
+
+  Loudness range:
+    LRA:         0.0 LU
+    Threshold: -55.4 LUFS
+    LRA low:   -35.4 LUFS
+    LRA high:  -35.4 LUFS
+
+  True peak:
+    Peak:      -26.5 dBFS

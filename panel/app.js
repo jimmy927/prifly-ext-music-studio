@@ -269,6 +269,11 @@ function player(project, id, kind = "sketch", label = "") {
   audio.addEventListener("pause", () => show("play"));
   return h("div", { class: "player" }, button, seek, time, note);
 }
+function claimPlayback(audio) {
+  if (playing !== null && playing !== audio)
+    playing.pause();
+  playing = audio;
+}
 function stopPlayers() {
   playing?.pause();
 }
@@ -361,7 +366,14 @@ function formatLength(seconds) {
 }
 
 // panel/src/state.ts
-var STAGES = ["arrange", "produce", "mix"];
+var STAGES = [
+  "arrange",
+  "produce",
+  "mix",
+  "master",
+  "prepare",
+  "deliver"
+];
 var app = {
   view: "idea",
   status: null,
@@ -372,7 +384,7 @@ var app = {
   confirming: false,
   notice: null,
   refusal: null,
-  library: { projects: null, query: "", error: null }
+  library: { projects: null, query: "", error: null, crate: "", crates: [] }
 };
 var listeners = new Set;
 var onRedraw = (listener) => void listeners.add(listener);
@@ -427,10 +439,10 @@ var GROUPS = [
       { id: "arrange", label: "Arrange" },
       { id: "produce", label: "Produce" },
       { id: "mix", label: "Mix" },
-      { id: "master", label: "Master", slice: 4 }
+      { id: "master", label: "Master" }
     ]
   },
-  { name: "DJ", tabs: [{ id: "prepare", label: "Prepare", slice: 4 }] },
+  { name: "DJ", tabs: [{ id: "prepare", label: "Prepare" }] },
   {
     name: "Video",
     tabs: [
@@ -440,7 +452,7 @@ var GROUPS = [
       { id: "edit", label: "Edit", slice: 7 }
     ]
   },
-  { name: "", tabs: [{ id: "deliver", label: "Deliver", slice: 5 }] }
+  { name: "", tabs: [{ id: "deliver", label: "Deliver" }] }
 ];
 function tab(each) {
   if (each.slice !== undefined) {
@@ -449,7 +461,7 @@ function tab(each) {
       class: "tab",
       disabled: true,
       "aria-disabled": "true",
-      title: `${each.label} arrives in slice ${each.slice}.`
+      title: `${each.label} comes with the Video stages.`
     }, each.label);
   }
   const view = each.id;
@@ -479,7 +491,7 @@ function gate(view) {
 }
 function stageNote() {
   if (app.project === null)
-    return "Open a project from the Library to use Arrange, Produce and Mix.";
+    return "Open a project from the Library to use the stages after Idea.";
   return gate("arrange").reason ?? "";
 }
 function go(view) {
@@ -851,6 +863,284 @@ function mountArrange() {
   };
 }
 
+// panel/src/local.ts
+var POLL_MS2 = 600;
+var local = { kind: null, job: null, starting: false, cancelling: false, notice: null };
+var localBusy = () => local.starting || local.job?.status === "running";
+async function ended2(kind, job, done) {
+  local.cancelling = false;
+  if (job.status === "failed")
+    local.notice = { kind, tone: "error", text: job.error ?? "The run failed." };
+  else if (job.status === "cancelled")
+    local.notice = {
+      kind,
+      tone: "info",
+      text: "Cancelled. Nothing was changed; anything already written is kept."
+    };
+  else
+    local.notice = { kind, tone: "info", text: await done(job) };
+}
+async function poll2(kind, id, done) {
+  try {
+    const job = await call(`job?id=${encodeURIComponent(id)}`);
+    local.job = job;
+    if (job.status === "running") {
+      redraw("stage");
+      setTimeout(() => void poll2(kind, id, done), POLL_MS2);
+      return;
+    }
+    await ended2(kind, job, done);
+  } catch (caught) {
+    local.notice = { kind, tone: "error", text: errorText(caught) };
+    local.job = null;
+  }
+  redraw("stage");
+}
+async function startLocal(kind, path, body, done) {
+  local.notice = null;
+  local.job = null;
+  local.kind = kind;
+  local.starting = true;
+  redraw("stage");
+  try {
+    const answer = await call(path, body);
+    local.starting = false;
+    if (answer.ok) {
+      local.job = answer.job;
+      redraw("stage");
+      await poll2(kind, answer.job.id, done);
+      return;
+    }
+    local.notice = { kind, tone: "warn", text: answer.message };
+  } catch (caught) {
+    local.starting = false;
+    local.notice = { kind, tone: "error", text: errorText(caught) };
+  }
+  redraw("stage");
+}
+async function cancelLocal() {
+  if (local.job === null)
+    return;
+  local.cancelling = true;
+  redraw("stage");
+  try {
+    await call("cancel", { job: local.job.id });
+  } catch (caught) {
+    local.notice = {
+      kind: local.kind ?? "master",
+      tone: "error",
+      text: errorText(caught)
+    };
+  }
+}
+var STEP_WORDS = {
+  measured: "measured",
+  rendered: "rendered",
+  checked: "checked",
+  decoded: "decoded",
+  tempo: "tempo found",
+  key: "key found",
+  loudness: "loudness measured",
+  stems: "stems written",
+  master: "master written",
+  rekordbox: "rekordbox written",
+  loops: "loop points written"
+};
+function localProgress(kind) {
+  const job = local.job;
+  const running = job !== null && job.work === kind && job.status === "running";
+  const step = running ? Math.min(job.done.length + 1, job.total) : 0;
+  const last = running ? job.done.at(-1) : undefined;
+  return h("div", { class: "local-progress", role: "status", "data-state": running ? "running" : "idle" }, h("span", { class: "local-step" }, running ? `${job.label}: step ${step} of ${job.total}${last === undefined ? "" : ` (${STEP_WORDS[last] ?? last})`}` : ""), h("div", { class: "track", "aria-hidden": "true" }, h("div", {
+    class: "fill",
+    style: `width:${running ? Math.round(job.done.length / Math.max(1, job.total) * 100) : 0}%`
+  })));
+}
+function localNotice(kind) {
+  const notice = local.notice;
+  return h("div", { class: "local-notice", "data-part": `${kind}-notice` }, notice === null || notice.kind !== kind ? null : h("div", { class: `notice ${notice.tone}`, role: notice.tone === "error" ? "alert" : "status" }, icon(notice.tone === "info" ? "info" : "alert"), h("div", { class: "notice-body" }, notice.text)));
+}
+
+// panel/src/deliver.ts
+var view2 = null;
+var loadError2 = null;
+var loadedFor2 = null;
+var written = null;
+var picked = new Set(["stems", "master", "rekordbox", "loops"]);
+var elsewhere = false;
+async function load2() {
+  const project = app.project;
+  if (project === null)
+    return;
+  loadedFor2 = project.id;
+  try {
+    view2 = await call(`deliver?project=${encodeURIComponent(project.id)}`);
+    loadError2 = null;
+  } catch (caught) {
+    view2 = null;
+    loadError2 = errorText(caught);
+  }
+  redraw("stage");
+}
+var heading2 = h("h2", null);
+var banner = h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" });
+var rows = h("div", { class: "deliver-rows", "data-part": "items" });
+var why2 = h("p", { class: "why", role: "status" });
+var slot = h("div", { class: "slot", "data-part": "run-status" });
+var resultBox = h("div", { class: "written", "data-part": "written" });
+var folder = h("input", {
+  type: "text",
+  id: "deliver-folder",
+  class: "folder-input",
+  placeholder: "Full path, for example C:\\Music\\deliver",
+  "aria-label": "Folder"
+});
+var crate = h("select", { id: "deliver-crate", "aria-label": "Rekordbox scope" });
+var deliverButton = h("button", { type: "button", class: "btn primary big", id: "deliver", onclick: () => void run() }, icon("check"), "Deliver");
+var cancelButton = h("button", { type: "button", class: "btn", id: "deliver-cancel", onclick: () => void cancelLocal() }, "Cancel");
+var hereText = h("span", null, "In the project: deliver");
+var here = h("input", { type: "radio", name: "where", id: "where-project", checked: true });
+var there = h("input", { type: "radio", name: "where", id: "where-folder" });
+for (const radio of [here, there])
+  radio.addEventListener("change", () => {
+    elsewhere = there.checked;
+    buttons();
+  });
+function rowsOf() {
+  const v = view2;
+  return [
+    {
+      item: "stems",
+      title: "Stems for a DAW",
+      detail: "WAV 24-bit, named like 122bpm 8A Vocals.wav",
+      available: (v?.stems ?? 0) > 0,
+      why: "No stems yet. Split them on the Produce stage."
+    },
+    {
+      item: "master",
+      title: "Master with BPM and key tags",
+      detail: "ID3 TBPM and TKEY in an MP3, Vorbis tags in an OGG; a WAV carries none",
+      available: v?.master != null,
+      why: "No master yet. Make one on the Master stage."
+    },
+    {
+      item: "rekordbox",
+      title: "rekordbox XML",
+      detail: "Tempo grid, cues A to H and the loop; one playlist per crate",
+      available: v?.prepared === true,
+      why: "Not analysed yet. Analyse it on the Prepare stage."
+    },
+    {
+      item: "loops",
+      title: "Track with cue and loop points as JSON",
+      detail: "A copy of the analysed audio and a .loops.json beside it",
+      available: v?.prepared === true,
+      why: "Not analysed yet. Analyse it on the Prepare stage."
+    }
+  ];
+}
+function itemRow(row) {
+  const box = h("input", {
+    type: "checkbox",
+    id: `item-${row.item}`,
+    checked: picked.has(row.item) && row.available,
+    disabled: !row.available
+  });
+  box.addEventListener("change", () => {
+    if (box.checked)
+      picked.add(row.item);
+    else
+      picked.delete(row.item);
+    buttons();
+  });
+  return h("label", { class: `deliver-row${row.available ? "" : " off"}`, "data-item": row.item }, box, h("span", { class: "deliver-text" }, h("span", { class: "card-title" }, row.title), h("span", { class: "meta" }, row.available ? row.detail : row.why)), row.item === "rekordbox" ? crate : null);
+}
+function soonRow(title) {
+  return h("label", { class: "deliver-row off", "data-item": title.toLowerCase().replace(/\s+/g, "-") }, h("input", { type: "checkbox", disabled: true }), h("span", { class: "deliver-text" }, h("span", { class: "card-title" }, title), h("span", { class: "meta" }, "Comes with the Video stages.")));
+}
+function drawRows() {
+  const v = view2;
+  const keep = crate.value;
+  fill(crate, h("option", { value: "" }, "This track"), ...(v?.crates ?? []).map((each) => h("option", { value: each.id }, `Crate: ${each.name} (${each.count})`)));
+  if ((v?.crates ?? []).some((each) => each.id === keep))
+    crate.value = keep;
+  fill(rows, ...rowsOf().map(itemRow), soonRow("Music video"), soonRow("Vertical cut"));
+}
+function blocker2() {
+  if (view2 === null)
+    return loadError2 ?? "Loading…";
+  if (!view2.ffmpeg.ok)
+    return view2.ffmpeg.message;
+  const items = rowsOf().filter((each) => each.available && picked.has(each.item));
+  if (items.length === 0)
+    return "Tick something that is ready to deliver.";
+  if (elsewhere && folder.value.trim() === "")
+    return "Type the folder to write into.";
+  return null;
+}
+function buttons() {
+  const reason = blocker2();
+  const busy = localBusy();
+  deliverButton.disabled = reason !== null || busy;
+  cancelButton.disabled = !(local.job?.status === "running" && local.job.work === "deliver") || local.cancelling;
+  cancelButton.textContent = local.cancelling ? "Cancelling…" : "Cancel";
+  folder.disabled = !elsewhere || busy;
+  here.disabled = busy;
+  there.disabled = busy;
+  crate.disabled = busy || !(view2?.prepared ?? false);
+  why2.textContent = reason ?? (busy ? "" : "Written on this computer. Files with the same name in the folder are replaced.");
+  const bad = view2 !== null && !view2.ffmpeg.ok;
+  banner.hidden = !bad;
+  fill(banner, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Delivering needs ffmpeg. "), view2?.ffmpeg.message ?? ""));
+}
+async function run() {
+  const project = app.project;
+  if (project === null || view2 === null)
+    return;
+  const items = rowsOf().filter((each) => each.available && picked.has(each.item)).map((each) => each.item);
+  written = null;
+  await startLocal("deliver", "deliver-run", {
+    project: project.id,
+    items,
+    dest: elsewhere ? folder.value.trim() : null,
+    crate: crate.value === "" ? null : crate.value
+  }, async (job) => {
+    try {
+      written = JSON.parse(job.result ?? "");
+    } catch {
+      written = null;
+    }
+    await load2();
+    return written === null ? "Done." : `Wrote ${written.files.length} files to ${written.dir}`;
+  });
+}
+function drawWritten() {
+  fill(resultBox, h("h3", null, "Written"), written === null ? h("p", { class: "empty", "data-state": "none-written" }, "Nothing written in this session yet.") : h("div", null, h("ul", { class: "files" }, ...written.files.map((file) => h("li", null, file))), ...written.notes.map((each) => h("p", { class: "meta" }, each))));
+}
+function update2() {
+  heading2.textContent = app.project === null ? "Deliver" : `Deliver — ${app.project.title}`;
+  hereText.textContent = `In the project: ${view2?.folder ?? "deliver"}`;
+  drawRows();
+  drawWritten();
+  buttons();
+  fill(slot, localProgress("deliver"), localNotice("deliver"));
+}
+function mountDeliver() {
+  const root = h("div", { class: "stage deliver", "data-stage": "deliver" }, h("section", { class: "main wide" }, heading2, banner, rows, h("div", { class: "where", "data-part": "where" }, h("span", { class: "field-label" }, "Folder"), h("label", { class: "seg" }, here, hereText), h("label", { class: "seg" }, there, "Another folder"), folder), h("div", { class: "actions" }, deliverButton, cancelButton, why2), slot, resultBox));
+  return {
+    root,
+    update: update2,
+    sync: () => {
+      if (loadedFor2 !== app.project?.id) {
+        view2 = null;
+        written = null;
+      }
+      load2();
+      update2();
+    }
+  };
+}
+
 // panel/src/form.ts
 var NOTES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 var KEYS = NOTES.flatMap((note) => [`${note} major`, `${note} minor`]);
@@ -952,7 +1242,7 @@ async function choose(project, sketch) {
   redraw("idea");
 }
 var cardTitle = (letter, title) => title === null ? `Sketch ${letter}` : `Sketch ${letter} · ${title}`;
-function slot(id, index) {
+function slot2(id, index) {
   const letter = id.toUpperCase();
   const project = app.project;
   const made = project?.sketchList.find((each) => each.id === id);
@@ -974,7 +1264,7 @@ function progress2(cancel, cancelling) {
   if (job === null || job.status !== "running")
     return null;
   const step = Math.min(job.done.length + 1, job.total);
-  return h("div", { class: "progress", role: "status" }, h("span", null, `Making sketch ${step} of ${job.total} with ${ENGINE_LABELS[job.engine]}. A sketch takes about half a minute.`), h("div", { class: "track" }, h("div", {
+  return h("div", { class: "progress", role: "status" }, h("span", null, `Making sketch ${step} of ${job.total} with ${job.engine === null ? "the engine" : ENGINE_LABELS[job.engine]}. A sketch takes about half a minute.`), h("div", { class: "track" }, h("div", {
     class: "fill",
     style: `width:${Math.round(job.done.length / job.total * 100)}%`
   })), h("button", { type: "button", class: "btn small", disabled: cancelling, onclick: cancel }, cancelling ? "Cancelling…" : "Cancel"));
@@ -983,14 +1273,14 @@ function renderSketches(cancel, cancelling) {
   const project = app.project;
   const heading = project === null ? "Sketches" : `Sketches — ${project.title}`;
   const empty = project === null && app.job === null && !app.confirming;
-  return h("section", { class: "side", "data-part": "sketches" }, h("h2", null, heading), progress2(cancel, cancelling), empty ? h("p", { class: "empty" }, "Nothing sketched yet. Write a brief, pick a preset if you like, and press Sketch 3 ideas.") : h("ul", { class: "cards" }, ...SKETCH_IDS.map((id, index) => slot(id, index))), project === null ? null : h("p", { class: "meta folder" }, `Saved in ${project.folder}`));
+  return h("section", { class: "side", "data-part": "sketches" }, h("h2", null, heading), progress2(cancel, cancelling), empty ? h("p", { class: "empty" }, "Nothing sketched yet. Write a brief, pick a preset if you like, and press Sketch 3 ideas.") : h("ul", { class: "cards" }, ...SKETCH_IDS.map((id, index) => slot2(id, index))), project === null ? null : h("p", { class: "meta folder" }, `Saved in ${project.folder}`));
 }
 
 // panel/src/idea.ts
-var POLL_MS2 = 1500;
+var POLL_MS3 = 1500;
 var timer = null;
 var cancelling = false;
-function blocker2() {
+function blocker3() {
   const status = app.status;
   if (status === null)
     return app.statusError === null ? "Loading your keys…" : "Cannot reach the extension.";
@@ -1011,7 +1301,7 @@ function blocker2() {
 async function showProject(id) {
   app.project = await call(`project?id=${encodeURIComponent(id)}`);
 }
-function ended2(job) {
+function ended3(job) {
   if (job.status === "failed") {
     if (job.kind === "bad_prompt")
       app.refusal = {
@@ -1028,7 +1318,7 @@ function ended2(job) {
   }
   loadStatus();
 }
-async function poll2() {
+async function poll3() {
   const current = app.job;
   if (current === null)
     return;
@@ -1040,10 +1330,10 @@ async function poll2() {
     else
       app.project = null;
     if (job.status === "running")
-      timer = setTimeout(() => void poll2(), POLL_MS2);
+      timer = setTimeout(() => void poll3(), POLL_MS3);
     else {
       cancelling = false;
-      ended2(job);
+      ended3(job);
     }
   } catch (caught) {
     app.notice = { tone: "error", text: errorText(caught) };
@@ -1054,7 +1344,7 @@ async function poll2() {
 function startPolling() {
   if (timer !== null)
     clearTimeout(timer);
-  poll2();
+  poll3();
 }
 async function sketch() {
   app.notice = null;
@@ -1121,7 +1411,7 @@ function mountIdea() {
   const cost = h("p", { class: "cost" });
   const form = buildForm(() => update());
   function update() {
-    const reason = blocker2();
+    const reason = blocker3();
     button.disabled = reason !== null;
     why.textContent = reason ?? "";
     cost.textContent = app.draft.engine === "elevenlabs" ? "Billed by ElevenLabs to your plan. You confirm first." : "Billed to your Gemini key. You confirm first.";
@@ -1140,11 +1430,119 @@ function mountIdea() {
   };
 }
 
+// panel/src/crates.ts
+var renaming = null;
+var deleting = null;
+var problem = null;
+async function change(path, body) {
+  try {
+    app.library.crates = (await call(path, body)).crates;
+    problem = null;
+    if (!app.library.crates.some((each) => each.id === app.library.crate))
+      app.library.crate = "";
+    renaming = null;
+    deleting = null;
+    await loadLibrary();
+    return true;
+  } catch (caught) {
+    problem = errorText(caught);
+    redraw("library");
+    return false;
+  }
+}
+function pick2(id) {
+  app.library.crate = id;
+  loadLibrary();
+}
+var newName = h("input", {
+  type: "text",
+  id: "new-crate",
+  placeholder: "New crate",
+  "aria-label": "New crate name"
+});
+var create = h("button", { type: "button", class: "btn small", id: "crate-create", onclick: () => void make() }, "Create");
+var note = h("p", { class: "crate-note", role: "alert" });
+var list = h("ul", { class: "crate-list", "data-part": "crates" });
+async function make() {
+  if (await change("crate-create", { name: newName.value }))
+    newName.value = "";
+}
+function crateRow(crate) {
+  const on = app.library.crate === crate.id;
+  if (renaming === crate.id) {
+    const input = h("input", {
+      type: "text",
+      class: "rename",
+      value: crate.name,
+      "aria-label": `Rename ${crate.name}`
+    });
+    return h("li", { class: "crate on", "data-crate": crate.id }, input, h("button", {
+      type: "button",
+      class: "btn small",
+      onclick: () => void change("crate-rename", { crate: crate.id, name: input.value })
+    }, "Save"), h("button", {
+      type: "button",
+      class: "btn small",
+      onclick: () => {
+        renaming = null;
+        redraw("library");
+      }
+    }, "Cancel"));
+  }
+  return h("li", { class: `crate${on ? " on" : ""}`, "data-crate": crate.id }, h("button", {
+    type: "button",
+    class: "crate-pick",
+    "aria-pressed": String(on),
+    onclick: () => pick2(crate.id)
+  }, h("span", { class: "crate-name" }, crate.name), h("span", { class: "meta" }, String(crate.count))), deleting === crate.id ? h("button", {
+    type: "button",
+    class: "btn small danger",
+    onclick: () => void change("crate-delete", { crate: crate.id })
+  }, "Delete crate") : h("button", {
+    type: "button",
+    class: "btn small",
+    "aria-label": `Rename ${crate.name}`,
+    onclick: () => {
+      renaming = crate.id;
+      deleting = null;
+      redraw("library");
+    }
+  }, "Rename"), h("button", {
+    type: "button",
+    class: "btn small",
+    "aria-label": `${deleting === crate.id ? "Keep" : "Delete"} ${crate.name}`,
+    onclick: () => {
+      deleting = deleting === crate.id ? null : crate.id;
+      redraw("library");
+    }
+  }, deleting === crate.id ? "Keep" : "Delete"));
+}
+function update3() {
+  const all = app.library.crate === "";
+  note.textContent = problem ?? "";
+  fill(list, h("li", { class: `crate${all ? " on" : ""}`, "data-crate": "" }, h("button", {
+    type: "button",
+    class: "crate-pick",
+    "aria-pressed": String(all),
+    onclick: () => pick2("")
+  }, h("span", { class: "crate-name" }, "All projects"), h("span", { class: "meta" }, String(app.library.projects?.length ?? "")))), ...app.library.crates.map(crateRow));
+}
+function mountCrates() {
+  newName.addEventListener("keydown", (event) => {
+    if (event.key === "Enter")
+      make();
+  });
+  const root = h("aside", { class: "side crates", "data-part": "crate-sidebar" }, h("h2", null, "Crates"), list, h("div", { class: "crate-new" }, newName, create), note);
+  update3();
+  return { root, update: update3 };
+}
+
 // panel/src/library.ts
 async function loadLibrary() {
   try {
-    const answer = await call(`library?q=${encodeURIComponent(app.library.query)}`);
+    const answer = await call(`library?q=${encodeURIComponent(app.library.query)}&crate=${encodeURIComponent(app.library.crate)}`);
     app.library.projects = answer.projects;
+    app.library.crates = (await call("crates")).crates;
     app.library.error = null;
   } catch (caught) {
     app.library.error = errorText(caught);
@@ -1167,8 +1565,50 @@ async function open(id) {
   }
 }
 var day = (iso) => iso.slice(0, 10);
+async function crateChange(path, crate, project) {
+  try {
+    await call(path, { crate, project });
+    app.library.error = null;
+  } catch (caught) {
+    app.library.error = errorText(caught);
+  }
+  await loadLibrary();
+}
+function crateCell(item) {
+  const open = app.library.crates.filter((each) => !item.crates.includes(each.id));
+  const add = h("select", {
+    class: "crate-add",
+    "aria-label": `Add ${item.title} to a crate`,
+    disabled: open.length === 0
+  }, h("option", { value: "" }, "Add to crate"), ...open.map((each) => h("option", { value: each.id }, each.name)));
+  add.addEventListener("change", () => {
+    if (add.value !== "")
+      crateChange("crate-add", add.value, item.id);
+  });
+  const shown = app.library.crate !== "";
+  return h("td", { class: "crate-cell" }, add, h("button", {
+    type: "button",
+    class: "btn small",
+    disabled: !shown,
+    title: shown ? "Take it out of this crate" : "Pick a crate to take tracks out of it",
+    onclick: () => void crateChange("crate-remove", app.library.crate, item.id)
+  }, "Remove"));
+}
+var bpmText = (item) => item.prep?.bpm == null ? "—" : String(item.prep.bpm);
+var lufsText = (item) => item.prep?.lufs == null ? "—" : item.prep.lufs.toFixed(1);
 function table(projects) {
-  return h("table", { class: "projects" }, h("thead", null, h("tr", null, ...["Title", "Engine", "Length", "Created", "Sketches", ""].map((each) => h("th", null, each)))), h("tbody", null, ...projects.map((each) => h("tr", { "data-project": each.id }, h("td", { class: "title" }, each.title), h("td", null, ENGINE_LABELS[each.engine]), h("td", null, formatLength(each.lengthSec)), h("td", null, day(each.created)), h("td", null, `${each.sketches}${each.chosen === null ? "" : `, ${each.chosen.toUpperCase()} chosen`}`), h("td", null, h("button", { type: "button", class: "btn small", onclick: () => void open(each.id) }, "Open"))))));
+  return h("table", { class: "projects" }, h("thead", null, h("tr", null, ...[
+    "Title",
+    "Engine",
+    "Length",
+    "Created",
+    "BPM",
+    "Key",
+    "LUFS",
+    "Sketches",
+    "",
+    "Crates"
+  ].map((each) => h("th", null, each)))), h("tbody", null, ...projects.map((each) => h("tr", { "data-project": each.id }, h("td", { class: "title" }, each.title), h("td", null, ENGINE_LABELS[each.engine]), h("td", null, formatLength(each.lengthSec)), h("td", null, day(each.created)), h("td", { class: "num" }, bpmText(each)), h("td", { class: "num" }, each.prep?.camelot ?? "—"), h("td", { class: "num" }, lufsText(each)), h("td", null, `${each.sketches}${each.chosen === null ? "" : `, ${each.chosen.toUpperCase()} chosen`}`), h("td", null, h("button", { type: "button", class: "btn small", onclick: () => void open(each.id) }, "Open")), crateCell(each)))));
 }
 function mountLibrary() {
   const body = h("div", { class: "library-body" });
@@ -1176,7 +1616,7 @@ function mountLibrary() {
   const search = h("input", {
     type: "search",
     class: "search",
-    placeholder: "Search title, engine or brief",
+    placeholder: "Search, or try key 8A, bpm 120-128",
     "aria-label": "Search the library"
   });
   search.addEventListener("input", () => {
@@ -1191,16 +1631,365 @@ function mountLibrary() {
       fill(body, h("div", { class: "notice error", role: "alert" }, icon("alert"), h("div", { class: "notice-body" }, error)));
     else if (projects === null)
       fill(body, h("p", { class: "empty", role: "status" }, "Loading the library…"));
-    else if (projects.length === 0 && query.trim() === "") {
+    else if (projects.length === 0 && query.trim() === "" && app.library.crate === "") {
       fill(body, h("div", { class: "empty-state", "data-state": "empty" }, icon("wave", 28), h("p", null, "The library is empty."), h("p", { class: "meta" }, "Sketch an idea and it is saved here."), h("button", { type: "button", class: "btn primary", onclick: () => go("idea") }, "Go to Idea")));
     } else if (projects.length === 0)
       fill(body, h("p", { class: "empty" }, `No project matches "${query}".`));
     else
       fill(body, table(projects));
   }
-  const root = h("div", { class: "library", "data-stage": "library" }, h("section", { class: "main wide" }, h("div", { class: "lib-head" }, h("h2", null, "Library"), h("div", { class: "search-wrap" }, icon("search", 15), search)), body));
+  const crates = mountCrates();
+  const root = h("div", { class: "library with-crates", "data-stage": "library" }, crates.root, h("section", { class: "main wide" }, h("div", { class: "lib-head" }, h("h2", null, "Library"), h("div", { class: "search-wrap" }, icon("search", 15), search)), body));
   update();
-  return { root, update };
+  return {
+    root,
+    update: () => {
+      update();
+      crates.update();
+    }
+  };
+}
+
+// panel/src/deck.ts
+class Deck {
+  audio = new Audio;
+  project;
+  kind;
+  id;
+  loading = null;
+  error = null;
+  constructor(project, kind, id) {
+    this.project = project;
+    this.kind = kind;
+    this.id = id;
+  }
+  load() {
+    this.loading ??= (async () => {
+      try {
+        const media = await fetchMedia(this.project, this.kind, this.id);
+        this.audio.src = blobUrl(media.base64, media.mime);
+        this.error = null;
+      } catch (caught) {
+        this.error = errorText(caught);
+        this.loading = null;
+        throw caught;
+      }
+    })();
+    return this.loading;
+  }
+  get playing() {
+    return !this.audio.paused;
+  }
+  async play() {
+    await this.load();
+    claimPlayback(this.audio);
+    await this.audio.play();
+  }
+  pause() {
+    this.audio.pause();
+  }
+  seek(sec) {
+    if (Number.isFinite(sec))
+      this.audio.currentTime = Math.max(0, sec);
+  }
+  dispose() {
+    this.audio.pause();
+    if (this.audio.src.startsWith("blob:"))
+      URL.revokeObjectURL(this.audio.src);
+    this.audio.removeAttribute("src");
+  }
+}
+var clock3 = (seconds) => {
+  const whole = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+  return `${Math.floor(whole / 60)}:${(whole % 60).toFixed(1).padStart(4, "0")}`;
+};
+
+// panel/src/master.ts
+var view3 = null;
+var loadError3 = null;
+var loadedFor3 = null;
+var target = "streaming";
+var format = "wav";
+var dirty2 = false;
+var db = (value, unit) => value === null || value === undefined ? "—" : `${value.toFixed(1)} ${unit}`;
+async function load3() {
+  const project = app.project;
+  if (project === null)
+    return;
+  loadedFor3 = project.id;
+  try {
+    view3 = await call(`master?project=${encodeURIComponent(project.id)}`);
+    loadError3 = null;
+  } catch (caught) {
+    view3 = null;
+    loadError3 = errorText(caught);
+  }
+  dirty2 = true;
+  redraw("stage");
+}
+var ab = {
+  source: null,
+  master: null,
+  side: "a",
+  compare: null,
+  match: true
+};
+var current = () => ab.side === "a" ? ab.source : ab.master;
+var masterOf = (n) => view3?.masters.find((each) => each.n === n);
+function resetDecks() {
+  ab.source?.dispose();
+  ab.master?.dispose();
+  ab.source = null;
+  ab.master = null;
+  const project = app.project;
+  const compared = masterOf(ab.compare);
+  if (project === null || view3 === null || view3.source === null || compared === undefined)
+    return;
+  ab.source = new Deck(project.id, view3.source.kind, view3.source.id);
+  ab.master = new Deck(project.id, "master", String(compared.n));
+  for (const deck of [ab.source, ab.master]) {
+    deck.audio.addEventListener("timeupdate", abTime);
+    deck.audio.addEventListener("pause", abButtons);
+    deck.audio.addEventListener("play", abButtons);
+  }
+  applyMatch();
+}
+function applyMatch() {
+  const compared = masterOf(ab.compare);
+  const source = view3?.loudness?.integrated;
+  const mastered = compared?.output?.integrated;
+  const lowest = source === undefined || mastered === undefined ? null : Math.min(source, mastered);
+  const volume = (own) => !ab.match || lowest === null || own === undefined ? 1 : Math.min(1, 10 ** ((lowest - own) / 20));
+  if (ab.source !== null)
+    ab.source.audio.volume = volume(source);
+  if (ab.master !== null)
+    ab.master.audio.volume = volume(mastered);
+}
+async function switchTo(side) {
+  const from = current();
+  if (side === ab.side || from === null)
+    return;
+  const at = from.audio.currentTime;
+  const wasPlaying = from.playing;
+  from.pause();
+  ab.side = side;
+  const to = current();
+  if (to === null)
+    return;
+  try {
+    await to.load();
+    to.seek(at);
+    if (wasPlaying)
+      await to.play();
+  } catch (caught) {
+    note2.textContent = errorText(caught);
+  }
+  abButtons();
+}
+async function togglePlay() {
+  const deck = current();
+  if (deck === null)
+    return;
+  try {
+    if (deck.playing)
+      deck.pause();
+    else
+      await deck.play();
+    note2.textContent = "";
+  } catch (caught) {
+    note2.textContent = errorText(caught);
+  }
+  abButtons();
+}
+var heading3 = h("h2", null);
+var slot3 = h("div", { class: "slot", "data-part": "run-status" });
+var banner2 = h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" });
+var facts = h("div", { class: "facts", "data-part": "source-loudness" });
+var lossy = h("p", { class: "why lossy-note", role: "note" });
+var why3 = h("p", { class: "why", role: "status" });
+var list2 = h("div", { class: "masters", "data-part": "masters" });
+var note2 = h("span", { class: "player-note", role: "status" });
+var seek = h("input", {
+  type: "range",
+  min: 0,
+  max: 1000,
+  value: 0,
+  class: "seek",
+  "aria-label": "Position"
+});
+var time = h("span", { class: "time" }, "0:00.0");
+var sideA = h("button", { type: "button", class: "btn toggle", id: "ab-source", onclick: () => void switchTo("a") }, "A  Source");
+var sideB = h("button", { type: "button", class: "btn toggle", id: "ab-master", onclick: () => void switchTo("b") }, "B  Master");
+var playButton = h("button", { type: "button", class: "btn", id: "ab-play", onclick: () => void togglePlay() }, icon("play", 14), "Play");
+var matchBox = h("input", { type: "checkbox", id: "ab-match", checked: true });
+var masterButton = h("button", { type: "button", class: "btn primary big", id: "master", onclick: () => void run2() }, icon("wave"), "Master");
+var cancelButton2 = h("button", { type: "button", class: "btn", id: "master-cancel", onclick: () => void cancelLocal() }, "Cancel");
+var targets = h("div", {
+  class: "segs",
+  role: "radiogroup",
+  "aria-label": "Target",
+  "data-part": "targets"
+});
+var formats = h("div", {
+  class: "segs",
+  role: "radiogroup",
+  "aria-label": "Format",
+  "data-part": "formats"
+});
+matchBox.addEventListener("change", () => {
+  ab.match = matchBox.checked;
+  applyMatch();
+});
+seek.addEventListener("input", () => {
+  const deck = current();
+  if (deck !== null && deck.audio.duration > 0)
+    deck.seek(Number(seek.value) / 1000 * deck.audio.duration);
+});
+function abTime() {
+  const audio = current()?.audio;
+  if (audio === undefined)
+    return;
+  if (audio.duration > 0)
+    seek.value = String(Math.round(audio.currentTime / audio.duration * 1000));
+  time.textContent = `${clock3(audio.currentTime)} / ${clock3(audio.duration || 0)}`;
+}
+function abButtons() {
+  const ready = ab.source !== null && ab.master !== null;
+  sideA.disabled = !ready;
+  sideB.disabled = !ready;
+  sideA.setAttribute("aria-pressed", String(ab.side === "a"));
+  sideB.setAttribute("aria-pressed", String(ab.side === "b"));
+  playButton.disabled = !ready;
+  seek.disabled = !ready;
+  matchBox.disabled = !ready;
+  playButton.replaceChildren(icon(current()?.playing === true ? "pause" : "play", 14), current()?.playing === true ? "Pause" : "Play");
+}
+function radios(holder, name, options, picked, pick) {
+  fill(holder, ...options.map((option) => {
+    const input = h("input", {
+      type: "radio",
+      name,
+      value: option.id,
+      checked: picked() === option.id
+    });
+    input.addEventListener("change", () => {
+      pick(option.id);
+      buttons2();
+    });
+    return h("label", { class: "seg" }, input, option.label);
+  }));
+}
+function blocker4() {
+  if (view3 === null)
+    return loadError3 ?? "Loading…";
+  if (!view3.ffmpeg.ok)
+    return view3.ffmpeg.message;
+  if (view3.source === null)
+    return "There is nothing to master yet. Choose a sketch on the Idea stage first.";
+  if (view3.loudness === null)
+    return view3.measureError ?? "Measuring the source…";
+  return null;
+}
+function buttons2() {
+  const reason = blocker4();
+  const busy = localBusy() || local.starting;
+  masterButton.disabled = reason !== null || busy;
+  cancelButton2.disabled = !(local.job?.status === "running" && local.job.work === "master") || local.cancelling;
+  cancelButton2.textContent = local.cancelling ? "Cancelling…" : "Cancel";
+  why3.textContent = reason ?? (busy ? "" : "Rendered on this computer with ffmpeg. Free, no confirm.");
+  const bad = view3 !== null && !view3.ffmpeg.ok;
+  banner2.hidden = !bad;
+  fill(banner2, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Mastering needs ffmpeg. "), view3?.ffmpeg.message ?? ""));
+  lossy.textContent = format === "wav" && view3?.source?.lossy === true ? view3.lossyNote : "";
+}
+function loudnessTile(label, value) {
+  return h("div", { class: "fact" }, h("span", { class: "field-label" }, label), h("span", { class: "big-number" }, value));
+}
+function drawFacts() {
+  const loudness = view3?.loudness ?? null;
+  const measuring = view3 !== null && view3.source !== null && loudness === null && view3.measureError === null;
+  fill(facts, h("div", { class: "fact wide" }, h("span", { class: "field-label" }, "Source"), h("span", null, view3?.source?.label ?? (view3 === null ? "…" : "none"))), loudnessTile("Integrated", measuring ? "Measuring…" : db(loudness?.integrated, "LUFS")), loudnessTile("True peak", measuring ? "…" : db(loudness?.truePeak, "dBTP")), loudnessTile("Loudness range", measuring ? "…" : db(loudness?.range, "LU")));
+}
+var targetLine = (item) => {
+  const wanted = view3?.targets.find((each) => each.id === item.target);
+  return `${wanted?.label ?? item.target} ${wanted?.lufs ?? ""} LUFS`;
+};
+function drawMasters() {
+  const items = [...view3?.masters ?? []].reverse();
+  fill(list2, h("h3", null, "Masters"), items.length === 0 ? h("p", { class: "empty", "data-state": "no-masters" }, "Nothing mastered yet. Pick a target and a format, then press Master.") : h("ul", { class: "version-list" }, ...items.map((item) => {
+    const radio = h("input", {
+      type: "radio",
+      name: "compare",
+      checked: item.n === ab.compare
+    });
+    radio.addEventListener("change", () => {
+      ab.compare = item.n;
+      ab.side = "a";
+      resetDecks();
+      abButtons();
+    });
+    return h("li", {
+      class: `version${item.n === ab.compare ? " current" : ""}`,
+      "data-master": String(item.n)
+    }, h("label", { class: "master-row" }, radio, h("span", { class: "card-title" }, `master-${item.n}.${item.format}`), h("span", { class: "meta" }, `${targetLine(item)}, from ${item.from}`)), h("div", { class: "meta" }, item.output === null ? "Result not measured." : `Result ${db(item.output.integrated, "LUFS")}, true peak ${db(item.output.truePeak, "dBTP")}, range ${db(item.output.range, "LU")}.${item.type === "dynamic" ? " The target could not be reached by gain alone, so the dynamics were compressed a little." : ""}`));
+  })));
+}
+async function run2() {
+  const project = app.project;
+  if (project === null)
+    return;
+  await startLocal("master", "master-render", { project: project.id, target, format }, async () => {
+    await load3();
+    ab.compare = view3?.masters.at(-1)?.n ?? null;
+    ab.side = "a";
+    dirty2 = true;
+    const latest = masterOf(ab.compare);
+    return latest === undefined ? "Mastered." : `Made master-${latest.n}.${latest.format}.`;
+  });
+}
+function draw() {
+  if (view3 !== null && (ab.compare === null || masterOf(ab.compare) === undefined))
+    ab.compare = view3.masters.at(-1)?.n ?? null;
+  resetDecks();
+  drawFacts();
+  drawMasters();
+  if (view3 !== null) {
+    radios(targets, "target", view3.targets.map((each) => ({ id: each.id, label: `${each.label}  ${each.lufs} LUFS` })), () => target, (id) => {
+      target = id;
+    });
+    radios(formats, "format", view3.formats, () => format, (id) => {
+      format = id;
+    });
+  }
+  abButtons();
+}
+function update4() {
+  heading3.textContent = app.project === null ? "Master" : `Master — ${app.project.title}`;
+  if (dirty2) {
+    dirty2 = false;
+    draw();
+  }
+  drawFacts();
+  buttons2();
+  fill(slot3, localProgress("master"), localNotice("master"));
+}
+function mountMaster() {
+  const root = h("div", { class: "stage master", "data-stage": "master" }, h("section", { class: "main wide" }, heading3, banner2, facts, h("div", { class: "choice-row" }, h("div", { class: "field" }, h("span", { class: "field-label" }, "Target"), targets), h("div", { class: "field" }, h("span", { class: "field-label" }, "Format"), formats)), lossy, h("div", { class: "actions" }, masterButton, cancelButton2, why3), slot3, list2, h("div", { class: "ab", "data-part": "ab" }, h("h3", null, "A/B against the source"), h("div", { class: "player" }, sideA, sideB, playButton, seek, time, h("label", { class: "check" }, matchBox, "Match loudness")), note2)));
+  return {
+    root,
+    update: update4,
+    sync: () => {
+      if (loadedFor3 !== app.project?.id) {
+        view3 = null;
+        ab.compare = null;
+      }
+      const deck = current();
+      deck?.pause();
+      load3();
+      dirty2 = true;
+      update4();
+    }
+  };
 }
 
 // audio/mixgraph.ts
@@ -1311,32 +2100,32 @@ class Preview {
 }
 
 // panel/src/mix.ts
-var view2 = null;
-var loadError2 = null;
-var loadedFor2 = null;
-var dirty2 = false;
+var view4 = null;
+var loadError4 = null;
+var loadedFor4 = null;
+var dirty3 = false;
 var mix = {};
 var preview = new Preview;
-async function load2() {
+async function load4() {
   const project = app.project;
   if (project === null)
     return;
-  loadedFor2 = project.id;
+  loadedFor4 = project.id;
   try {
-    view2 = await call(`mix?project=${encodeURIComponent(project.id)}`);
-    mix = Object.fromEntries(view2.tracks.map((each) => [each.key, { ...each.mix }]));
-    loadError2 = null;
+    view4 = await call(`mix?project=${encodeURIComponent(project.id)}`);
+    mix = Object.fromEntries(view4.tracks.map((each) => [each.key, { ...each.mix }]));
+    loadError4 = null;
   } catch (caught) {
-    view2 = null;
-    loadError2 = errorText(caught);
+    view4 = null;
+    loadError4 = errorText(caught);
   }
-  dirty2 = true;
+  dirty3 = true;
   redraw("stage");
 }
 var dbText = (db) => `${db > 0 ? "+" : ""}${db.toFixed(1)} dB`;
 var panText = (pan) => Math.abs(pan) < 0.025 ? "C" : `${pan < 0 ? "L" : "R"}${Math.round(Math.abs(pan) * 100)}`;
-var heading2 = h("h2", null);
-var banner = h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" });
+var heading4 = h("h2", null);
+var banner3 = h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" });
 var tracksBox = h("div", { class: "tracks", "data-part": "tracks" });
 var rendersBox = h("div", { class: "renders", "data-part": "renders" });
 var status = h("p", { class: "why", role: "status" });
@@ -1347,31 +2136,31 @@ var saveTimer = null;
 var play = h("button", { type: "button", class: "btn", id: "play-preview", onclick: () => void startPreview() }, icon("play", 14), "Play preview");
 var stop = h("button", { type: "button", class: "btn", id: "stop-preview", onclick: () => stopPreview() }, icon("pause", 14), "Stop");
 var render2 = h("button", { type: "button", class: "btn primary big", id: "render-mix", onclick: () => void renderNow() }, icon("wave"), "Render mix");
-var note = h("div", { class: "notices", "data-part": "mix-note" });
-var hasTracks = () => (view2?.tracks.length ?? 0) > 0;
+var note3 = h("div", { class: "notices", "data-part": "mix-note" });
+var hasTracks = () => (view4?.tracks.length ?? 0) > 0;
 function renderBlocker() {
-  if (view2 === null)
-    return loadError2 ?? "Loading the tracks…";
+  if (view4 === null)
+    return loadError4 ?? "Loading the tracks…";
   if (!hasTracks())
     return "There are no stems yet. Split stems on the Produce stage first.";
-  if (!view2.ffmpeg.ok)
-    return view2.ffmpeg.message;
+  if (!view4.ffmpeg.ok)
+    return view4.ffmpeg.message;
   if (rendering)
     return "Rendering…";
   if (audible(Object.values(mix)).length === 0)
     return "Every track is muted, or others are soloed.";
   return null;
 }
-function buttons() {
+function buttons3() {
   const reason = renderBlocker();
   render2.disabled = reason !== null || busy();
   play.disabled = !hasTracks() || previewState !== "idle";
   stop.disabled = previewState !== "playing";
   status.textContent = previewState === "loading" ? "Loading the tracks for the preview…" : reason ?? "";
-  banner.hidden = view2 === null || view2.ffmpeg.ok;
-  const shown = view2?.ffmpeg.ok === false ? view2.ffmpeg.message : "";
-  fill(banner, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Mix cannot be rendered. "), shown, " Playing the preview still works."));
-  fill(note, renderNote === null ? null : h("div", { class: `notice ${renderNote.tone}`, role: "status" }, icon(renderNote.tone === "info" ? "check" : "alert"), h("div", { class: "notice-body" }, renderNote.text)));
+  banner3.hidden = view4 === null || view4.ffmpeg.ok;
+  const shown = view4?.ffmpeg.ok === false ? view4.ffmpeg.message : "";
+  fill(banner3, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Mix cannot be rendered. "), shown, " Playing the preview still works."));
+  fill(note3, renderNote === null ? null : h("div", { class: `notice ${renderNote.tone}`, role: "status" }, icon(renderNote.tone === "info" ? "check" : "alert"), h("div", { class: "notice-body" }, renderNote.text)));
 }
 function changed() {
   preview.apply(mix);
@@ -1379,7 +2168,7 @@ function changed() {
     clearTimeout(saveTimer);
   saveTimer = setTimeout(() => void save(), 400);
   dimRows();
-  buttons();
+  buttons3();
 }
 async function save() {
   const project = app.project;
@@ -1389,7 +2178,7 @@ async function save() {
     await call("mix-save", { project: project.id, mix: { tracks: mix } });
   } catch (caught) {
     renderNote = { tone: "error", text: errorText(caught) };
-    buttons();
+    buttons3();
   }
 }
 function dimRows() {
@@ -1399,28 +2188,28 @@ function dimRows() {
 }
 async function startPreview() {
   const project = app.project;
-  if (project === null || view2 === null)
+  if (project === null || view4 === null)
     return;
   previewState = "loading";
-  buttons();
+  buttons3();
   try {
-    await preview.load(project.id, view2.tracks, view2.tempo);
+    await preview.load(project.id, view4.tracks, view4.tempo);
     stopPlayers();
     await preview.play(mix, () => {
       previewState = "idle";
-      buttons();
+      buttons3();
     });
     previewState = "playing";
   } catch (caught) {
     previewState = "idle";
     renderNote = { tone: "error", text: `The preview could not play: ${errorText(caught)}` };
   }
-  buttons();
+  buttons3();
 }
 function stopPreview() {
   preview.stop();
   previewState = "idle";
-  buttons();
+  buttons3();
 }
 async function renderNow() {
   const project = app.project;
@@ -1428,7 +2217,7 @@ async function renderNow() {
     return;
   rendering = true;
   renderNote = null;
-  buttons();
+  buttons3();
   try {
     const answer = await call("mix-render", {
       project: project.id,
@@ -1439,7 +2228,7 @@ async function renderNow() {
     renderNote = { tone: "error", text: errorText(caught) };
   }
   rendering = false;
-  await load2();
+  await load4();
 }
 function row(track) {
   const settings = mix[track.key] ?? { ...DEFAULT_TRACK };
@@ -1488,88 +2277,592 @@ function row(track) {
     }
   }), panOut), toggle("mute", "Mute"), toggle("solo", "Solo"));
 }
-function draw() {
+function draw2() {
   const project = app.project;
-  if (project === null || view2 === null) {
-    fill(tracksBox, h("p", { class: "empty" }, loadError2 ?? "Open a project from the Library first."));
+  if (project === null || view4 === null) {
+    fill(tracksBox, h("p", { class: "empty" }, loadError4 ?? "Open a project from the Library first."));
     fill(rendersBox);
     return;
   }
-  if (view2.tracks.length === 0) {
+  if (view4.tracks.length === 0) {
     fill(tracksBox, h("div", { class: "empty-state", "data-state": "no-stems" }, h("p", null, "No stems yet. Split the song into stems on the Produce stage, then mix them here."), h("button", { type: "button", class: "btn", onclick: () => go("produce") }, "Go to Produce")));
   } else {
-    fill(tracksBox, ...view2.tracks.map(row));
+    fill(tracksBox, ...view4.tracks.map(row));
     dimRows();
   }
-  const list = [...view2.renders].reverse();
+  const list = [...view4.renders].reverse();
   fill(rendersBox, h("h3", null, "Rendered mixes"), list.length === 0 ? h("p", { class: "empty" }, "No mix rendered yet.") : h("ul", { class: "version-list" }, ...list.map((each) => h("li", { class: "version", "data-mix": String(each.n) }, h("div", { class: "card-title" }, `mix-${each.n}.wav`), player(project.id, String(each.n), "mix", `mix ${each.n}`)))));
 }
-function update2() {
-  heading2.textContent = app.project === null ? "Mix" : `Mix — ${app.project.title}`;
-  if (dirty2) {
-    dirty2 = false;
-    draw();
+function update5() {
+  heading4.textContent = app.project === null ? "Mix" : `Mix — ${app.project.title}`;
+  if (dirty3) {
+    dirty3 = false;
+    draw2();
   }
-  buttons();
+  buttons3();
 }
 function mountMix() {
-  const root = h("div", { class: "stage mix", "data-stage": "mix" }, h("section", { class: "main wide" }, heading2, banner, tracksBox, h("div", { class: "actions" }, play, stop, render2, h("p", { class: "cost" }, "Rendered on this computer with ffmpeg. Free, no confirm.")), status, note, rendersBox));
+  const root = h("div", { class: "stage mix", "data-stage": "mix" }, h("section", { class: "main wide" }, heading4, banner3, tracksBox, h("div", { class: "actions" }, play, stop, render2, h("p", { class: "cost" }, "Rendered on this computer with ffmpeg. Free, no confirm.")), status, note3, rendersBox));
   return {
     root,
-    update: update2,
+    update: update5,
     sync: () => {
-      if (loadedFor2 !== app.project?.id)
-        view2 = null;
+      if (loadedFor4 !== app.project?.id)
+        view4 = null;
       preview.reset();
       previewState = "idle";
-      load2();
-      dirty2 = true;
-      update2();
+      load4();
+      dirty3 = true;
+      update5();
+    }
+  };
+}
+
+// prep/grid.ts
+var SLOTS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+var LOOP_BARS = [1, 2, 4, 8, 16, 32];
+var BEATS_PER_BAR2 = 4;
+var ms = (value) => Math.round(value * 1000) / 1000;
+var beatSeconds = (grid) => 60 / grid.bpm;
+function beatsBetween(grid, from, to) {
+  const beat = beatSeconds(grid);
+  const out = [];
+  const start = Math.ceil((Math.max(from, 0) - grid.firstBeatSec) / beat - 0.000000001);
+  for (let index = start;; index += 1) {
+    const sec = grid.firstBeatSec + index * beat;
+    if (sec > to)
+      break;
+    const inBar = (index % BEATS_PER_BAR2 + BEATS_PER_BAR2) % BEATS_PER_BAR2;
+    out.push({ sec: ms(sec), bar: Math.floor(index / BEATS_PER_BAR2) + 1, beat: inBar + 1 });
+  }
+  return out;
+}
+var clockText = (sec) => {
+  const whole = Math.max(0, sec);
+  const minutes = Math.floor(whole / 60);
+  return `${minutes}:${(whole - minutes * 60).toFixed(2).padStart(5, "0")}`;
+};
+
+// panel/src/prep-state.ts
+var ps = { view: null, error: null, loadedFor: null, playhead: 0, message: null };
+var prep = () => ps.view?.prep ?? null;
+async function load5() {
+  const project = app.project;
+  if (project === null)
+    return;
+  ps.loadedFor = project.id;
+  try {
+    ps.view = await call(`prepare?project=${encodeURIComponent(project.id)}`);
+    ps.error = null;
+  } catch (caught) {
+    ps.view = null;
+    ps.error = errorText(caught);
+  }
+  redraw("stage");
+}
+async function edit(path, body = {}) {
+  const project = app.project;
+  if (project === null || ps.view === null)
+    return;
+  ps.message = null;
+  try {
+    const answer = await call(path, { project: project.id, ...body });
+    if (answer.ok)
+      ps.view = { ...ps.view, prep: answer.prep };
+    else
+      ps.message = answer.message;
+  } catch (caught) {
+    ps.message = errorText(caught);
+  }
+  redraw("stage");
+}
+
+// panel/src/prep-controls.ts
+var hooks = { seek: () => {
+  return;
+} };
+var gridOf = () => prep()?.grid ?? null;
+var editable = () => gridOf() !== null && !localBusy();
+function button(label, onClick, enabled, extra = "") {
+  return h("button", { type: "button", class: `btn small ${extra}`.trim(), disabled: !enabled, onclick: onClick }, label);
+}
+var bpmInput = h("input", {
+  type: "number",
+  min: 40,
+  max: 240,
+  step: 0.01,
+  id: "bpm-input",
+  "aria-label": "BPM",
+  placeholder: "BPM"
+});
+function gridControls() {
+  const nudge = (ms) => button(`${ms > 0 ? "+" : "−"}${Math.abs(ms)} ms`, () => void edit("prep-nudge", { ms }), editable());
+  const typed = () => {
+    const bpm = Number(bpmInput.value);
+    edit("prep-bpm", { bpm: bpmInput.value.trim() === "" ? null : bpm });
+  };
+  bpmInput.disabled = prep() === null || localBusy();
+  return h("div", { class: "controls-row", "data-part": "grid" }, h("span", { class: "field-label" }, "Grid"), nudge(-10), nudge(-1), nudge(1), nudge(10), button("First beat here", () => void edit("prep-first-beat", { sec: ps.playhead }), editable()), h("span", { class: "field-label sep" }, "BPM"), bpmInput, button("Set BPM", typed, prep() !== null && !localBusy()));
+}
+function cueRow(slot) {
+  const cue = prep()?.cues.find((each) => each.slot === slot);
+  const beat = gridOf() === null ? 0 : 60 / (gridOf()?.bpm ?? 120);
+  const name = h("input", {
+    type: "text",
+    class: "cue-name",
+    value: cue?.name ?? "",
+    placeholder: cue === undefined ? "" : "Name",
+    "aria-label": `Name of cue ${slot}`,
+    disabled: cue === undefined || localBusy()
+  });
+  name.addEventListener("change", () => {
+    if (cue !== undefined)
+      edit("prep-cue", { slot, sec: cue.sec, name: name.value });
+  });
+  const move = (by) => () => {
+    if (cue !== undefined)
+      edit("prep-cue", { slot, sec: cue.sec + by * beat });
+  };
+  return h("div", { class: `cue-row${cue === undefined ? "" : " set"}`, "data-slot": slot }, h("span", { class: "cue-slot" }, slot), h("span", { class: "cue-time" }, cue === undefined ? "—" : clockText(cue.sec)), name, button("Set here", () => void edit("prep-cue", { slot, sec: ps.playhead }), editable()), button("Go", () => cue !== undefined && hooks.seek(cue.sec), cue !== undefined), button("−1 beat", move(-1), cue !== undefined && editable()), button("+1 beat", move(1), cue !== undefined && editable()), button("Delete", () => void edit("prep-cue-delete", { slot }), cue !== undefined && !localBusy()));
+}
+function cuesBox() {
+  const auto = button("Cues from sections", () => void edit("prep-auto-cues"), editable() && ps.view?.hasPlan === true);
+  auto.title = ps.view?.hasPlan === true ? "Replace the cues with one per section start" : "This song has no section plan";
+  return h("div", { class: "cues", "data-part": "cues" }, h("div", { class: "cues-head" }, h("h3", null, "Cues"), auto), ...SLOTS.map(cueRow));
+}
+var loopBars = h("select", { id: "loop-bars", "aria-label": "Loop length in bars" }, ...LOOP_BARS.map((bars) => h("option", { value: String(bars), selected: bars === 4 }, `${bars} ${bars === 1 ? "bar" : "bars"}`)));
+function loopControls() {
+  const loop = prep()?.loop ?? null;
+  return h("div", { class: "controls-row", "data-part": "loop" }, h("span", { class: "field-label" }, "Loop"), loopBars, button("Set loop here", () => void edit("prep-loop", { startSec: ps.playhead, bars: Number(loopBars.value) }), editable()), button("Clear loop", () => void edit("prep-loop-clear"), loop !== null && !localBusy()), button("Go to loop", () => loop !== null && hooks.seek(loop.startSec), loop !== null), h("span", { class: "meta" }, loop === null ? "No loop. It starts on the beat nearest the playhead." : `${clockText(loop.startSec)} to ${clockText(loop.endSec)}, ${loop.bars} ${loop.bars === 1 ? "bar" : "bars"}`));
+}
+function compatibleRow() {
+  const list = prep()?.compatible ?? [];
+  return h("div", { class: "controls-row", "data-part": "compatible" }, h("span", { class: "field-label" }, "Mixes with"), list.length === 0 ? h("span", { class: "meta" }, "The key is not known yet.") : h("span", { class: "chips" }, ...list.map((each) => h("span", { class: "key-chip", title: each.name }, `${each.code} ${each.name}, ${each.relation}`))));
+}
+var crateSelect = h("select", { id: "crate-pick", "aria-label": "Crate" });
+async function toggleCrate(crate, inCrate) {
+  const project = app.project?.id;
+  if (project === undefined || ps.view === null)
+    return;
+  try {
+    const answer = await call("prep-crate", {
+      project,
+      crate,
+      in: inCrate
+    });
+    ps.view = { ...ps.view, crates: answer.crates };
+  } catch (caught) {
+    ps.message = errorText(caught);
+  }
+  redraw("stage");
+}
+function crateControls() {
+  const crates = ps.view?.crates ?? [];
+  const open = crates.filter((each) => !each.has);
+  const keep = crateSelect.value;
+  fill(crateSelect, ...open.map((each) => h("option", { value: each.id }, each.name)));
+  if (open.some((each) => each.id === keep))
+    crateSelect.value = keep;
+  crateSelect.disabled = open.length === 0 || prep() === null;
+  return h("div", { class: "controls-row", "data-part": "crates" }, h("span", { class: "field-label" }, "Crates"), crateSelect, button("Add to crate", () => void toggleCrate(crateSelect.value, true), open.length > 0 && prep() !== null), crates.length === 0 ? h("span", { class: "meta" }, "No crates yet. Make one in the Library.") : h("span", { class: "chips" }, ...crates.filter((each) => each.has).map((each) => h("span", { class: "crate-chip" }, each.name, h("button", {
+    type: "button",
+    class: "chip-x",
+    "aria-label": `Remove from ${each.name}`,
+    onclick: () => void toggleCrate(each.id, false)
+  }, icon("close", 12))))));
+}
+
+// panel/src/waveform.ts
+var NS = "http://www.w3.org/2000/svg";
+var WIDTH = 1000;
+var HEIGHT = 150;
+var MID = HEIGHT / 2;
+function svg(tag, attrs, text) {
+  const node = document.createElementNS(NS, tag);
+  for (const [name, value] of Object.entries(attrs))
+    node.setAttribute(name, String(value));
+  if (text !== undefined)
+    node.textContent = text;
+  return node;
+}
+
+class Waveform {
+  root;
+  canvas;
+  playhead = null;
+  data = null;
+  span = 0;
+  start = 0;
+  head = 0;
+  seekTo;
+  constructor(seekTo) {
+    this.seekTo = seekTo;
+    this.canvas = svg("svg", {
+      viewBox: `0 0 ${WIDTH} ${HEIGHT}`,
+      preserveAspectRatio: "none",
+      class: "wf",
+      role: "img",
+      "aria-label": "Waveform with beatgrid and cues"
+    });
+    this.canvas.addEventListener("click", (event) => this.click(event));
+    this.root = document.createElement("div");
+    this.root.className = "wave";
+    this.root.append(this.canvas);
+  }
+  get window() {
+    const duration = this.data?.durationSec ?? 0;
+    const length = this.span === 0 ? duration : Math.min(this.span, duration);
+    const from = this.span === 0 ? 0 : Math.min(this.start, Math.max(0, duration - length));
+    return { from, to: from + length };
+  }
+  setData(data) {
+    this.data = data;
+    this.draw();
+  }
+  setWindow(span, start) {
+    this.span = span;
+    this.start = start;
+    this.draw();
+  }
+  setPlayhead(sec) {
+    this.head = sec;
+    this.moveHead();
+  }
+  x(sec) {
+    const { from, to } = this.window;
+    return to > from ? (sec - from) / (to - from) * WIDTH : 0;
+  }
+  moveHead() {
+    if (this.playhead === null)
+      return;
+    const x = this.x(this.head);
+    this.playhead.setAttribute("x1", String(x));
+    this.playhead.setAttribute("x2", String(x));
+    this.playhead.setAttribute("visibility", x >= 0 && x <= WIDTH ? "visible" : "hidden");
+  }
+  click(event) {
+    const box = this.canvas.getBoundingClientRect();
+    if (box.width === 0)
+      return;
+    const { from, to } = this.window;
+    this.seekTo(from + (event.clientX - box.left) / box.width * (to - from));
+  }
+  outline() {
+    const data = this.data;
+    if (data === null || data.peaks.length === 0)
+      return "";
+    const { from, to } = this.window;
+    const top = [];
+    const bottom = [];
+    for (let column = 0;column < WIDTH; column += 1) {
+      const a = Math.floor((from + (to - from) * column / WIDTH) * data.perSec);
+      const b = Math.max(a + 1, Math.floor((from + (to - from) * (column + 1) / WIDTH) * data.perSec));
+      let peak = 0;
+      for (let at = a;at < b; at += 1)
+        peak = Math.max(peak, data.peaks[at] ?? 0);
+      const half = peak / 255 * (MID - 14);
+      top.push(`${column},${(MID - half).toFixed(1)}`);
+      bottom.unshift(`${column},${(MID + half).toFixed(1)}`);
+    }
+    return [...top, ...bottom].join(" ");
+  }
+  grid() {
+    const data = this.data;
+    if (data === null || data.grid === null)
+      return [];
+    const { from, to } = this.window;
+    const beats = beatsBetween(data.grid, from, to);
+    const every = beats.length > 360 ? 4 : 1;
+    return beats.filter((each) => every === 1 || each.beat === 1).map((each) => svg("line", {
+      x1: this.x(each.sec),
+      x2: this.x(each.sec),
+      y1: each.beat === 1 ? 0 : 18,
+      y2: HEIGHT,
+      class: each.beat === 1 ? "wf-bar" : "wf-beat"
+    }));
+  }
+  marks() {
+    const data = this.data;
+    if (data === null)
+      return [];
+    const { from, to } = this.window;
+    const out = [];
+    if (data.loop !== null) {
+      const left = this.x(Math.max(from, data.loop.startSec));
+      const right = this.x(Math.min(to, data.loop.endSec));
+      if (right > left)
+        out.push(svg("rect", { x: left, y: 0, width: right - left, height: HEIGHT, class: "wf-loop" }));
+    }
+    for (const cue of data.cues) {
+      if (cue.sec < from || cue.sec > to)
+        continue;
+      const x = this.x(cue.sec);
+      out.push(svg("line", { x1: x, x2: x, y1: 0, y2: HEIGHT, class: "wf-cue" }), svg("rect", { x, y: 0, width: 16, height: 16, class: "wf-flag" }), svg("text", { x: x + 8, y: 12, class: "wf-letter", "text-anchor": "middle" }, cue.slot));
+    }
+    return out;
+  }
+  draw() {
+    this.canvas.replaceChildren(svg("line", { x1: 0, x2: WIDTH, y1: MID, y2: MID, class: "wf-mid" }), svg("polygon", { points: this.outline(), class: "wf-wave" }), ...this.grid(), ...this.marks());
+    this.playhead = svg("line", { x1: 0, x2: 0, y1: 0, y2: HEIGHT, class: "wf-head" });
+    this.canvas.append(this.playhead);
+    this.moveHead();
+  }
+}
+
+// panel/src/prepare.ts
+var ZOOMS = [
+  { span: 0, label: "Whole track" },
+  { span: 60, label: "60 seconds" },
+  { span: 30, label: "30 seconds" },
+  { span: 15, label: "15 seconds" },
+  { span: 8, label: "8 seconds" }
+];
+var deck = null;
+var frame = 0;
+var drawnFor = "";
+var heading5 = h("h2", null);
+var banner4 = h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" });
+var stale = h("p", { class: "why", role: "status", "data-part": "stale" });
+var facts2 = h("div", { class: "facts", "data-part": "facts" });
+var why4 = h("p", { class: "why", role: "status" });
+var slot4 = h("div", { class: "slot", "data-part": "run-status" });
+var tempoNote = h("p", { class: "why tempo-note", role: "status", "data-part": "tempo-note" });
+var editNote = h("p", { class: "why", role: "status", "data-part": "edit-note" });
+var controls = h("div", { class: "prep-controls" });
+var time2 = h("span", { class: "time" }, "0:00.00");
+var playNote = h("span", { class: "player-note", role: "status" });
+var wave = new Waveform((sec) => seek2(sec));
+var analyseButton = h("button", { type: "button", class: "btn primary big", id: "analyse", onclick: () => void analyse() }, icon("wave"), "Analyse");
+var cancelButton3 = h("button", { type: "button", class: "btn", id: "analyse-cancel", onclick: () => void cancelLocal() }, "Cancel");
+var playButton2 = h("button", { type: "button", class: "btn", id: "prep-play", onclick: () => void toggle() }, icon("play", 14), "Play");
+var zoom = h("select", { id: "wave-zoom", "aria-label": "Zoom" }, ...ZOOMS.map((each) => h("option", { value: String(each.span) }, each.label)));
+var scroll = h("input", {
+  type: "range",
+  min: 0,
+  max: 1000,
+  value: 0,
+  id: "wave-scroll",
+  class: "seek",
+  "aria-label": "Position in the track"
+});
+function seek2(sec) {
+  ps.playhead = Math.max(0, sec);
+  if (deck !== null && deck.audio.readyState > 0)
+    deck.seek(ps.playhead);
+  headMoved();
+}
+hooks.seek = seek2;
+function headMoved() {
+  wave.setPlayhead(ps.playhead);
+  time2.textContent = `${clockText(ps.playhead)} / ${clockText(prep()?.analysis.durationSec ?? 0)}`;
+  const { from, to } = wave.window;
+  if (zoomSpan() > 0 && (ps.playhead < from || ps.playhead > to)) {
+    wave.setWindow(zoomSpan(), Math.max(0, ps.playhead - zoomSpan() * 0.1));
+    syncScroll();
+  }
+}
+var zoomSpan = () => Number(zoom.value);
+function syncScroll() {
+  const duration = prep()?.analysis.durationSec ?? 0;
+  const span = zoomSpan();
+  scroll.disabled = span === 0 || duration <= span;
+  scroll.value = span === 0 || duration <= span ? "0" : String(Math.round(wave.window.from / (duration - span) * 1000));
+}
+zoom.addEventListener("change", () => {
+  wave.setWindow(zoomSpan(), Math.max(0, ps.playhead - zoomSpan() / 2));
+  syncScroll();
+});
+scroll.addEventListener("input", () => {
+  const duration = prep()?.analysis.durationSec ?? 0;
+  const span = zoomSpan();
+  wave.setWindow(span, Number(scroll.value) / 1000 * Math.max(0, duration - span));
+});
+function follow() {
+  const playing = deck;
+  if (playing?.playing === true) {
+    ps.playhead = playing.audio.currentTime;
+    headMoved();
+    frame = requestAnimationFrame(follow);
+  }
+}
+async function toggle() {
+  const source = prep()?.source;
+  const project = app.project;
+  if (source === undefined || project === null)
+    return;
+  if (deck === null || deck.id !== source.id || deck.kind !== source.kind) {
+    deck?.dispose();
+    deck = new Deck(project.id, source.kind, source.id);
+    deck.audio.addEventListener("pause", () => buttons4());
+    deck.audio.addEventListener("ended", () => buttons4());
+  }
+  try {
+    if (deck.playing)
+      deck.pause();
+    else {
+      await deck.play();
+      deck.seek(ps.playhead);
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(follow);
+    }
+    playNote.textContent = "";
+  } catch (caught) {
+    playNote.textContent = caught instanceof Error ? caught.message : String(caught);
+  }
+  buttons4();
+}
+async function analyse() {
+  const project = app.project;
+  if (project === null)
+    return;
+  await startLocal("analyse", "prepare-analyse", { project: project.id }, async () => {
+    deck?.dispose();
+    deck = null;
+    await load5();
+    const found = prep();
+    drawnFor = "";
+    if (found === null)
+      return "Analysed.";
+    return found.analysis.bpm === null ? "Analysed. No clear tempo was found; type a BPM to make a grid." : `Analysed: ${found.grid?.bpm ?? found.analysis.bpm} BPM${found.analysis.key === null ? "" : `, ${found.analysis.key.camelot}`}.`;
+  });
+}
+function blocker5() {
+  const view = ps.view;
+  if (view === null)
+    return ps.error ?? "Loading…";
+  if (!view.ffmpeg.ok)
+    return view.ffmpeg.message;
+  if (view.source === null)
+    return "There is nothing to analyse yet. Choose a sketch on the Idea stage first.";
+  return null;
+}
+function buttons4() {
+  const reason = blocker5();
+  const busy = localBusy();
+  analyseButton.disabled = reason !== null || busy;
+  cancelButton3.disabled = !(local.job?.status === "running" && local.job.work === "analyse") || local.cancelling;
+  cancelButton3.textContent = local.cancelling ? "Cancelling…" : "Cancel";
+  playButton2.disabled = prep() === null;
+  playButton2.replaceChildren(icon(deck?.playing === true ? "pause" : "play", 14), deck?.playing === true ? "Pause" : "Play");
+  zoom.disabled = prep() === null;
+  const view = ps.view;
+  why4.textContent = reason ?? (busy ? "" : prep() === null ? "Analysing takes a few seconds and runs on this computer." : "");
+  banner4.hidden = view === null || view.ffmpeg.ok;
+  fill(banner4, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Preparing needs ffmpeg. "), view?.ffmpeg.message ?? ""));
+  stale.textContent = view?.stale === true ? `There is a newer ${view.source?.label ?? "file"} than the one analysed. Analyse again to use it.` : "";
+}
+function tile(label, value, sub = "") {
+  return h("div", { class: "fact" }, h("span", { class: "field-label" }, label), h("span", { class: "big-number" }, value), h("span", { class: "meta" }, sub));
+}
+function bpmSource() {
+  const found = prep();
+  if (found === null)
+    return "";
+  if (found.manualBpm)
+    return "typed in";
+  return found.analysis.bpm === null ? "none found" : "found";
+}
+var orDash = (value, make) => value === null || value === undefined ? "—" : make(value);
+function drawFacts2() {
+  const found = prep();
+  const analysis = found?.analysis;
+  const grid = found?.grid ?? null;
+  fill(facts2, tile("BPM", orDash(grid?.bpm, String), bpmSource()), tile("Key", analysis?.key?.camelot ?? "—", analysis?.key?.name ?? ""), tile("First beat", orDash(grid?.firstBeatSec, (sec) => `${sec.toFixed(3)} s`)), tile("Energy", orDash(analysis?.energy, (energy) => `${energy} / 10`)), tile("Loudness", orDash(analysis?.lufs, (lufs) => `${lufs.toFixed(1)} LUFS`), orDash(analysis?.truePeak, (peak) => `peak ${peak.toFixed(1)} dBTP`).replace("—", "")));
+  tempoNote.textContent = found !== null && grid === null ? "No clear tempo was found in this track, so there is no grid. Type a BPM below to make one." : "";
+  editNote.textContent = ps.message ?? "";
+  if (grid !== null && document.activeElement !== bpmInput)
+    bpmInput.value = String(grid.bpm);
+}
+function waveData() {
+  const found = prep();
+  const peaks = ps.view?.peaks;
+  if (found === null || peaks == null)
+    return null;
+  return {
+    peaks: peaks.peaks,
+    perSec: peaks.perSec,
+    durationSec: found.analysis.durationSec,
+    grid: found.grid,
+    cues: found.cues,
+    loop: found.loop
+  };
+}
+function update6() {
+  heading5.textContent = app.project === null ? "Prepare" : `Prepare — ${app.project.title}`;
+  drawFacts2();
+  buttons4();
+  fill(controls, gridControls(), cuesBox(), loopControls(), compatibleRow(), crateControls());
+  wave.setData(waveData());
+  syncScroll();
+  headMoved();
+  const key = `${app.project?.id}:${prep()?.analysis.analysedAt}`;
+  if (key !== drawnFor) {
+    drawnFor = key;
+    ps.playhead = 0;
+    headMoved();
+  }
+  fill(slot4, localProgress("analyse"), localNotice("analyse"));
+}
+function mountPrepare() {
+  const root = h("div", { class: "stage prepare", "data-stage": "prepare" }, h("section", { class: "main wide" }, heading5, banner4, h("div", { class: "actions" }, analyseButton, cancelButton3, why4), stale, slot4, facts2, tempoNote, wave.root, h("div", { class: "player wave-bar" }, playButton2, time2, h("span", { class: "grow" }), h("label", { class: "field-inline" }, h("span", { class: "field-label" }, "Zoom"), zoom), scroll), playNote, editNote, controls));
+  return {
+    root,
+    update: update6,
+    sync: () => {
+      if (ps.loadedFor !== app.project?.id) {
+        ps.view = null;
+        deck?.dispose();
+        deck = null;
+        ps.playhead = 0;
+      }
+      ps.message = null;
+      load5();
+      update6();
     }
   };
 }
 
 // panel/src/produce.ts
-var view3 = null;
-var loadError3 = null;
-var loadedFor3 = null;
-var dirty3 = false;
-async function load3() {
+var view5 = null;
+var loadError5 = null;
+var loadedFor5 = null;
+var dirty4 = false;
+async function load6() {
   const project = app.project;
   if (project === null)
     return;
-  loadedFor3 = project.id;
+  loadedFor5 = project.id;
   try {
-    view3 = await call(`produce?project=${encodeURIComponent(project.id)}`);
-    loadError3 = null;
+    view5 = await call(`produce?project=${encodeURIComponent(project.id)}`);
+    loadError5 = null;
   } catch (caught) {
-    view3 = null;
-    loadError3 = errorText(caught);
+    view5 = null;
+    loadError5 = errorText(caught);
   }
-  dirty3 = true;
+  dirty4 = true;
   redraw("stage");
 }
-function blocker3() {
-  if (view3 === null)
-    return loadError3 ?? "Loading…";
-  if (view3.source === null)
+function blocker6() {
+  if (view5 === null)
+    return loadError5 ?? "Loading…";
+  if (view5.source === null)
     return "Choose a sketch on the Idea stage first.";
   if (app.status !== null && !app.status.elevenlabs.keySet)
     return "No ElevenLabs key. Add it in Settings → Extensions → Music Studio.";
   return busy() ? "A run is in progress." : null;
 }
-var heading3 = h("h2", null);
+var heading6 = h("h2", null);
 var sourceLine = h("p", { class: "meta" });
 var stemsBox = h("div", { class: "lanes", "data-part": "stems" });
 var layersBox = h("div", { class: "lanes", "data-part": "layers" });
 var workSlot2 = h("div", { class: "work-slot" });
 var split = h("button", { type: "button", class: "btn primary", id: "split-stems", onclick: () => void splitStems() }, icon("wave"), "Split stems");
-var why2 = h("p", { class: "why", role: "status" });
+var why5 = h("p", { class: "why", role: "status" });
 var prompt = h("input", {
   type: "text",
   name: "prompt",
   placeholder: "cymbal swell, vinyl crackle, door slam…",
-  oninput: () => buttons2()
+  oninput: () => buttons5()
 });
 var bar = h("input", { type: "number", name: "start-bar", min: 1, step: 1, value: "1" });
 var length = h("input", {
@@ -1579,13 +2872,13 @@ var length = h("input", {
   max: 30,
   step: 0.5,
   value: "3",
-  oninput: () => buttons2()
+  oninput: () => buttons5()
 });
 var loop = h("input", { type: "checkbox", name: "loop" });
 var add = h("button", { type: "button", class: "btn primary", id: "add-sfx", onclick: () => void addLayer() }, icon("spark"), "Add sound effect");
 var addWhy = h("p", { class: "why", role: "status" });
 function addBlocker() {
-  const base = blocker3();
+  const base = blocker6();
   if (base !== null)
     return base;
   if (prompt.value.trim() === "")
@@ -1595,10 +2888,10 @@ function addBlocker() {
     return "A sound effect lasts 0.5 to 30 seconds.";
   return null;
 }
-function buttons2() {
-  const reason = blocker3();
+function buttons5() {
+  const reason = blocker6();
   split.disabled = reason !== null;
-  why2.textContent = reason ?? (view3?.stems.length ? "Splitting again replaces the stems below." : "");
+  why5.textContent = reason ?? (view5?.stems.length ? "Splitting again replaces the stems below." : "");
   const addReason = addBlocker();
   add.disabled = addReason !== null;
   addWhy.textContent = addReason === "Describe the sound first." ? "" : addReason ?? "";
@@ -1609,7 +2902,7 @@ async function splitStems() {
   const project = app.project;
   if (project === null)
     return;
-  await startWork("stems-split", { project: project.id }, load3);
+  await startWork("stems-split", { project: project.id }, load6);
 }
 async function addLayer() {
   const project = app.project;
@@ -1623,14 +2916,14 @@ async function addLayer() {
     loop: loop.checked
   }, async () => {
     prompt.value = "";
-    await load3();
+    await load6();
   });
 }
 async function regenerate(layer) {
   const project = app.project;
   if (project === null)
     return;
-  await startWork("sfx-regenerate", { project: project.id, layer: layer.id }, load3);
+  await startWork("sfx-regenerate", { project: project.id, layer: layer.id }, load6);
 }
 async function remove2(layer) {
   const project = app.project;
@@ -1639,9 +2932,9 @@ async function remove2(layer) {
   try {
     await call("sfx-remove", { project: project.id, layer: layer.id });
   } catch (caught) {
-    loadError3 = errorText(caught);
+    loadError5 = errorText(caught);
   }
-  await load3();
+  await load6();
 }
 function layerRow(project, layer) {
   return h("div", { class: "lane layer", "data-layer": layer.id }, h("div", { class: "lane-head" }, h("span", { class: "lane-name" }, layer.prompt), h("span", { class: "meta" }, `bar ${layer.startBar} · ${layer.lengthSec} s${layer.loop ? " · loop" : ""}`), h("span", { class: "grow" }), h("button", {
@@ -1650,37 +2943,37 @@ function layerRow(project, layer) {
     onclick: () => void regenerate(layer)
   }, "Regenerate"), h("button", { type: "button", class: "btn small layer-action", onclick: () => void remove2(layer) }, "Remove")), player(project, layer.id, "layer", `sound effect ${layer.prompt}`));
 }
-function draw2() {
+function draw3() {
   const project = app.project;
-  if (project === null || view3 === null) {
-    fill(stemsBox, h("p", { class: "empty" }, loadError3 ?? "Open a project from the Library first."));
+  if (project === null || view5 === null) {
+    fill(stemsBox, h("p", { class: "empty" }, loadError5 ?? "Open a project from the Library first."));
     fill(layersBox);
     return;
   }
-  sourceLine.textContent = view3.source === null ? "" : `Working from ${view3.source.label}.${view3.stemSource === null ? "" : ` Stems are from ${view3.stemSource}.`}`;
-  fill(stemsBox, view3.stems.length === 0 ? h("p", { class: "empty" }, "No stems yet. Split stems to separate the song into vocals, drums, bass and the rest.") : null, ...view3.stems.map((each) => h("div", { class: "lane stem", "data-stem": each.name }, h("div", { class: "lane-head" }, h("span", { class: "lane-name" }, each.name)), player(project.id, each.name, "stem", `${each.name} stem`))));
-  fill(layersBox, view3.layers.length === 0 ? h("p", { class: "empty" }, "No sound effects yet.") : null, ...view3.layers.map((each) => layerRow(project.id, each)));
+  sourceLine.textContent = view5.source === null ? "" : `Working from ${view5.source.label}.${view5.stemSource === null ? "" : ` Stems are from ${view5.stemSource}.`}`;
+  fill(stemsBox, view5.stems.length === 0 ? h("p", { class: "empty" }, "No stems yet. Split stems to separate the song into vocals, drums, bass and the rest.") : null, ...view5.stems.map((each) => h("div", { class: "lane stem", "data-stem": each.name }, h("div", { class: "lane-head" }, h("span", { class: "lane-name" }, each.name)), player(project.id, each.name, "stem", `${each.name} stem`))));
+  fill(layersBox, view5.layers.length === 0 ? h("p", { class: "empty" }, "No sound effects yet.") : null, ...view5.layers.map((each) => layerRow(project.id, each)));
 }
-function update3() {
-  heading3.textContent = app.project === null ? "Produce" : `Produce — ${app.project.title}`;
+function update7() {
+  heading6.textContent = app.project === null ? "Produce" : `Produce — ${app.project.title}`;
   fill(workSlot2, renderWork());
-  if (dirty3) {
-    dirty3 = false;
-    draw2();
+  if (dirty4) {
+    dirty4 = false;
+    draw3();
   }
-  buttons2();
+  buttons5();
 }
 function mountProduce() {
-  const root = h("div", { class: "stage produce", "data-stage": "produce" }, h("section", { class: "main wide" }, heading3, sourceLine, h("h3", null, "Stems"), h("div", { class: "actions" }, split, h("p", { class: "cost" }, "Billed by ElevenLabs to your plan. You confirm first.")), why2, stemsBox, h("h3", null, "Sound effects"), h("div", { class: "sfx-form" }, h("label", { class: "field grow" }, h("span", { class: "field-label" }, "Prompt"), prompt), h("label", { class: "field narrow" }, h("span", { class: "field-label" }, "Start bar"), bar), h("label", { class: "field narrow" }, h("span", { class: "field-label" }, "Length (s)"), length), h("label", { class: "check" }, loop, "Loop"), add), addWhy, layersBox, workSlot2));
+  const root = h("div", { class: "stage produce", "data-stage": "produce" }, h("section", { class: "main wide" }, heading6, sourceLine, h("h3", null, "Stems"), h("div", { class: "actions" }, split, h("p", { class: "cost" }, "Billed by ElevenLabs to your plan. You confirm first.")), why5, stemsBox, h("h3", null, "Sound effects"), h("div", { class: "sfx-form" }, h("label", { class: "field grow" }, h("span", { class: "field-label" }, "Prompt"), prompt), h("label", { class: "field narrow" }, h("span", { class: "field-label" }, "Start bar"), bar), h("label", { class: "field narrow" }, h("span", { class: "field-label" }, "Length (s)"), length), h("label", { class: "check" }, loop, "Loop"), add), addWhy, layersBox, workSlot2));
   return {
     root,
-    update: update3,
+    update: update7,
     sync: () => {
-      if (loadedFor3 !== app.project?.id)
-        view3 = null;
-      load3();
-      dirty3 = true;
-      update3();
+      if (loadedFor5 !== app.project?.id)
+        view5 = null;
+      load6();
+      dirty4 = true;
+      update7();
     }
   };
 }
@@ -1718,7 +3011,14 @@ head.append(statusSlot);
 document.body.replaceChildren(root);
 var idea = mountIdea();
 var library = mountLibrary();
-var stages = { arrange: mountArrange(), produce: mountProduce(), mix: mountMix() };
+var stages = {
+  arrange: mountArrange(),
+  produce: mountProduce(),
+  mix: mountMix(),
+  master: mountMaster(),
+  prepare: mountPrepare(),
+  deliver: mountDeliver()
+};
 function stage() {
   return STAGES.includes(app.view) ? stages[app.view] : null;
 }

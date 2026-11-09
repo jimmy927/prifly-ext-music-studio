@@ -82,6 +82,9 @@ test("activate registers the tools and the panel module answers its routes", asy
     "music_stems",
     "music_sfx",
     "music_mix",
+    "music_master",
+    "music_prepare",
+    "music_deliver",
   ]);
   expect(await panel("studio", { path: "library", query: {}, body: null })).toEqual({
     projects: [],

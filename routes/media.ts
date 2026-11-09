@@ -1,12 +1,13 @@
 /**
  * `api/media`: one audio file of a project as base64 JSON, since the host
- * serves no audio types. `kind` is sketch, version, stem, layer or mix; `id`
- * names the one (a, v2, vocals, a layer id, a mix number). The older
+ * serves no audio types. `kind` is sketch, version, stem, layer, mix or master; `id`
+ * names the one (a, v2, vocals, a layer id, a mix or master number). The older
  * `sketch=<x>` query still means kind sketch.
  */
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { masters } from "../project/master";
 import { layers, mixes, readStems, versions } from "../project/stage";
 import { entryOf, type Handler } from "./common";
 
@@ -40,6 +41,8 @@ async function fileOf(
       return (await layers(dir)).find((each) => each.id === id)?.file ?? null;
     case "mix":
       return (await mixes(dir)).find((each) => String(each.n) === id)?.file ?? null;
+    case "master":
+      return (await masters(dir)).find((each) => String(each.n) === id)?.file ?? null;
     default:
       return null;
   }

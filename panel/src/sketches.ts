@@ -86,7 +86,7 @@ function progress(cancel: () => void, cancelling: boolean): Child {
     h(
       "span",
       null,
-      `Making sketch ${step} of ${job.total} with ${ENGINE_LABELS[job.engine]}. A sketch takes about half a minute.`,
+      `Making sketch ${step} of ${job.total} with ${job.engine === null ? "the engine" : ENGINE_LABELS[job.engine]}. A sketch takes about half a minute.`,
     ),
     h(
       "div",

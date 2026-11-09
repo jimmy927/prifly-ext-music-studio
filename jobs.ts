@@ -10,6 +10,7 @@ import type { IndexEntry, Store } from "./project/store";
 import {
   endFailed,
   fail,
+  isLocalKind,
   type Job,
   type JobKind,
   SETTINGS_HINT,
@@ -20,7 +21,7 @@ import {
 export type Confirm = Parameters<NonNullable<ExtensionApi["confirm"]>>[0];
 
 export type Work = {
-  work: Exclude<JobKind, "sketch">;
+  work: Extract<JobKind, "arrange" | "stems" | "sfx">;
   label: string;
   total: number;
   confirm: Confirm;
@@ -31,12 +32,11 @@ export type Work = {
 async function execute(
   studio: Studio,
   job: Job,
-  work: Work,
-  key: string,
+  run: () => Promise<string>,
   signal: AbortSignal,
 ): Promise<Job> {
   try {
-    job.result = await work.run({ key, signal, job, store: studio.store() });
+    job.result = await run();
     job.status = signal.aborted ? "cancelled" : "done";
   } catch (caught) {
     endFailed(job, caught, signal);
@@ -47,7 +47,7 @@ async function execute(
 
 /** Whether a paid run is going in this extension already. */
 export const busy = (studio: Studio): boolean =>
-  [...studio.jobs.values()].some((each) => each.status === "running");
+  [...studio.jobs.values()].some((each) => each.status === "running" && !isLocalKind(each.work));
 
 /** Checks, asks and starts. `linked` aborts the run when the session that called the tool goes away. */
 export async function launch(
@@ -82,5 +82,50 @@ export async function launch(
   const abort = new AbortController();
   linked?.addEventListener("abort", () => abort.abort());
   studio.register(job, abort);
-  return { ok: true, job, finished: execute(studio, job, work, key, abort.signal) };
+  const run = () => work.run({ key, signal: abort.signal, job, store: studio.store() });
+  return { ok: true, job, finished: execute(studio, job, run, abort.signal) };
+}
+
+/** Work done on this computer (no key, no cost, no card): analysing, mastering, exporting. */
+export type LocalWork = {
+  work: Extract<JobKind, "master" | "analyse" | "deliver">;
+  label: string;
+  /** How many steps it has; each finished step is pushed on `job.done`. */
+  total: number;
+  /** Does the work; returns what it made. Throws to fail the job. */
+  run: (context: { signal: AbortSignal; job: Job; store: Store }) => Promise<string>;
+};
+
+/** Whether a local run is going; it does not wait for a paid one, nor the other way round. */
+export const localBusy = (studio: Studio): boolean =>
+  [...studio.jobs.values()].some((each) => each.status === "running" && isLocalKind(each.work));
+
+/** Starts local work in the background as a job the panel polls and can cancel. */
+export function launchLocal(
+  studio: Studio,
+  project: string | null,
+  work: LocalWork,
+  linked?: AbortSignal,
+): Started {
+  if (localBusy(studio))
+    return fail("invalid", "Another local run is still going. Wait for it or cancel it.");
+  const job: Job = {
+    id: crypto.randomUUID().slice(0, 8),
+    work: work.work,
+    label: work.label,
+    project,
+    engine: null,
+    status: "running",
+    done: [],
+    total: work.total,
+    result: null,
+    error: null,
+    kind: null,
+    suggestion: null,
+  };
+  const abort = new AbortController();
+  linked?.addEventListener("abort", () => abort.abort());
+  studio.register(job, abort);
+  const run = () => work.run({ signal: abort.signal, job, store: studio.store() });
+  return { ok: true, job, finished: execute(studio, job, run, abort.signal) };
 }

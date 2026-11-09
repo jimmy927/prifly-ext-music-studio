@@ -5,11 +5,14 @@
  */
 
 import { mountArrange } from "./arrange";
+import { mountDeliver } from "./deliver";
 import { h } from "./dom";
 import { loadStatus, renderHeader, renderStageBar } from "./header";
 import { mountIdea } from "./idea";
 import { loadLibrary, mountLibrary } from "./library";
+import { mountMaster } from "./master";
 import { mountMix } from "./mix";
+import { mountPrepare } from "./prepare";
 import { mountProduce } from "./produce";
 import { app, onRedraw, STAGES } from "./state";
 import { clearWork } from "./work";
@@ -58,7 +61,14 @@ document.body.replaceChildren(root);
 
 const idea = mountIdea();
 const library = mountLibrary();
-const stages = { arrange: mountArrange(), produce: mountProduce(), mix: mountMix() };
+const stages = {
+  arrange: mountArrange(),
+  produce: mountProduce(),
+  mix: mountMix(),
+  master: mountMaster(),
+  prepare: mountPrepare(),
+  deliver: mountDeliver(),
+};
 
 /** The mounted stage page for the current view, or null on Idea and Library. */
 function stage() {

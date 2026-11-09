@@ -81,10 +81,10 @@ const GROUPS: { name: string; tabs: Tab[] }[] = [
       { id: "arrange", label: "Arrange" },
       { id: "produce", label: "Produce" },
       { id: "mix", label: "Mix" },
-      { id: "master", label: "Master", slice: 4 },
+      { id: "master", label: "Master" },
     ],
   },
-  { name: "DJ", tabs: [{ id: "prepare", label: "Prepare", slice: 4 }] },
+  { name: "DJ", tabs: [{ id: "prepare", label: "Prepare" }] },
   {
     name: "Video",
     tabs: [
@@ -94,7 +94,7 @@ const GROUPS: { name: string; tabs: Tab[] }[] = [
       { id: "edit", label: "Edit", slice: 7 },
     ],
   },
-  { name: "", tabs: [{ id: "deliver", label: "Deliver", slice: 5 }] },
+  { name: "", tabs: [{ id: "deliver", label: "Deliver" }] },
 ];
 
 function tab(each: Tab): HTMLElement {
@@ -106,7 +106,7 @@ function tab(each: Tab): HTMLElement {
         class: "tab",
         disabled: true,
         "aria-disabled": "true",
-        title: `${each.label} arrives in slice ${each.slice}.`,
+        title: `${each.label} comes with the Video stages.`,
       },
       each.label,
     );
@@ -130,7 +130,7 @@ function tab(each: Tab): HTMLElement {
   );
 }
 
-/** Whether a stage's tab is on, and why not. Arrange needs a chosen ElevenLabs sketch; Produce and Mix need any chosen sketch. */
+/** Whether a stage's tab is on, and why not. Arrange needs a chosen ElevenLabs sketch; the other stages need any chosen sketch. */
 export function gate(view: View): { enabled: boolean; reason: string | null } {
   const project = app.project;
   if (project === null || project.chosen === null)
@@ -144,8 +144,7 @@ export function gate(view: View): { enabled: boolean; reason: string | null } {
 
 /** The reason Arrange is off, in words on the page (not only in a tooltip); empty when nothing is off for a reason worth saying. */
 function stageNote(): string {
-  if (app.project === null)
-    return "Open a project from the Library to use Arrange, Produce and Mix.";
+  if (app.project === null) return "Open a project from the Library to use the stages after Idea.";
   return gate("arrange").reason ?? "";
 }
 

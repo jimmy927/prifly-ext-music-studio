@@ -6,6 +6,7 @@
  */
 
 import type { ExtensionApi, PanelRequest } from "@prifly/extension-api";
+import { deliverTool, masterTool, prepareTool } from "./dj-tools";
 import { route } from "./panel-router";
 import { arrangeTool, mixTool, sfxTool, stemsTool } from "./stage-tools";
 import { Studio } from "./studio";
@@ -39,6 +40,9 @@ export function activate(given: ExtensionApi): () => void {
     stemsTool(studio),
     sfxTool(studio),
     mixTool(studio),
+    masterTool(studio),
+    prepareTool(studio),
+    deliverTool(studio),
   ]);
   given.onSettings?.(refresh);
   given.log("activated");

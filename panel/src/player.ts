@@ -12,12 +12,12 @@ let playing: HTMLAudioElement | null = null;
 const clock = (seconds: number): string =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 
-function blobUrl(base64: string, mime: string): string {
+export function blobUrl(base64: string, mime: string): string {
   const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
   return URL.createObjectURL(new Blob([bytes], { type: mime }));
 }
 
-export type Kind = "sketch" | "version" | "stem" | "layer" | "mix";
+export type Kind = "sketch" | "version" | "stem" | "layer" | "mix" | "master";
 
 /** The file's bytes and type from the extension. */
 export async function fetchMedia(
@@ -99,6 +99,12 @@ export function player(
   audio.addEventListener("pause", () => show("play"));
 
   return h("div", { class: "player" }, button, seek, time, note);
+}
+
+/** Makes `audio` the one that plays: whatever else played is paused. */
+export function claimPlayback(audio: HTMLAudioElement): void {
+  if (playing !== null && playing !== audio) playing.pause();
+  playing = audio;
 }
 
 /** Stops whatever plays, so the mix preview and a player never sound together. */

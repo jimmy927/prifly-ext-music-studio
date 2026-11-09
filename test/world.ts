@@ -7,6 +7,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { deliverTool, masterTool, prepareTool } from "../dj-tools";
 import type { Fetch } from "../engines/types";
 import { arrangeTool, mixTool, sfxTool, stemsTool } from "../stage-tools";
 import { Studio } from "../studio";
@@ -156,6 +157,9 @@ export function world(
     stemsTool(studio),
     sfxTool(studio),
     mixTool(studio),
+    masterTool(studio),
+    prepareTool(studio),
+    deliverTool(studio),
   ]);
   return { fake, studio, calls, folder, callTool: fake.callTool };
 }

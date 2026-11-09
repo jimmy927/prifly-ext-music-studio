@@ -14,7 +14,7 @@ import { type Job, type Studio, startSketch } from "./studio";
 export const CANCELLED = "Not done: you cancelled.";
 
 /** `<scratchpad>/music-studio/<name>`, else `<extension folder>/scratch/<name>` when prifly cannot say. */
-function scratchFolder(studio: Studio, ctx: ExtensionToolContext, name: string): string {
+export function scratchFolder(studio: Studio, ctx: ExtensionToolContext, name: string): string {
   try {
     return join(ctx.scratchpad, "music-studio", name);
   } catch {

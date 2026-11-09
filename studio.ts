@@ -19,6 +19,7 @@ import {
   SKETCH_MS,
   titleOf,
 } from "./project/brief";
+import { Crates } from "./project/crates";
 import { type IndexEntry, libraryFolder, Store } from "./project/store";
 
 export type Deps = { api: () => ExtensionApi | null; fetch: Fetch };
@@ -27,9 +28,13 @@ export const SETTINGS_HINT = "Add it in Settings → Extensions → Music Studio
 
 export type JobStatus = "running" | "done" | "failed" | "cancelled";
 
-export type JobKind = "sketch" | "arrange" | "stems" | "sfx";
+export type JobKind = "sketch" | "arrange" | "stems" | "sfx" | "master" | "analyse" | "deliver";
 
-/** A paid run (sketches, an arrange render, stems, a sound effect), as the panel polls it. */
+/** The kinds that run on this computer: no key, no cost. */
+export const isLocalKind = (kind: JobKind): boolean =>
+  kind === "master" || kind === "analyse" || kind === "deliver";
+
+/** A run (paid: sketches, an arrange render, stems, a sound effect; local: master, analyse, deliver), as the panel polls it. */
 export type Job = {
   id: string;
   work: JobKind;
@@ -37,7 +42,8 @@ export type Job = {
   label: string;
   /** The project the work goes to; null once an empty project was removed again. */
   project: string | null;
-  engine: EngineId;
+  /** The engine a paid run uses; null for local work. */
+  engine: EngineId | null;
   status: JobStatus;
   /** Steps finished so far (sketch ids for sketches). */
   done: string[];
@@ -69,6 +75,13 @@ export class Studio {
     const api = this.api();
     if (api.state === undefined) throw new Error("This prifly keeps no state. Update prifly.");
     return new Store(libraryFolder(api.settings?.["libraryFolder"]), api.state);
+  }
+
+  /** The crates, kept in the extension's state. */
+  crates(): Crates {
+    const api = this.api();
+    if (api.state === undefined) throw new Error("This prifly keeps no state. Update prifly.");
+    return new Crates(api.state);
   }
 
   /** The ffmpeg to start: the `ffmpegPath` setting, else the PATH's. */

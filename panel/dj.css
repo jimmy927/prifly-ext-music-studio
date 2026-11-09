@@ -1,0 +1,400 @@
+/* Master, Prepare, Deliver and the Library's crates. Tokens come from style.css; nothing here sets a colour of its own. */
+
+/* Rows that keep their height so the buttons around them never move */
+.local-progress {
+  min-height: 34px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+}
+.local-progress[data-state="idle"] .track {
+  visibility: hidden;
+}
+.local-step {
+  font-size: 12px;
+  color: var(--muted-fg);
+  min-height: 17px;
+}
+.local-notice {
+  min-height: 0;
+}
+.local-notice .notice {
+  margin: 0;
+}
+.slot {
+  display: grid;
+  min-height: 46px;
+}
+.slot > * {
+  grid-area: 1 / 1;
+}
+.stage .actions {
+  margin-top: 4px;
+}
+.stage .actions .why {
+  margin-top: 0;
+}
+
+/* Loudness and analysis tiles */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 8px 12px;
+  min-height: 74px;
+}
+.fact.wide {
+  grid-column: span 1;
+}
+.big-number {
+  font: 600 20px / 1.2 var(--mono);
+}
+.choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+.lossy-note {
+  min-height: 34px;
+  margin-top: 0;
+}
+.segs input[type="radio"] {
+  margin: 0;
+}
+
+/* Masters and the A/B switch */
+.master-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  cursor: pointer;
+}
+.toggle[aria-pressed="true"] {
+  background: var(--brand);
+  color: var(--brand-fg);
+  border-color: var(--brand);
+}
+.ab {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.ab h3 {
+  margin: 0;
+}
+
+/* Waveform */
+.wave {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  overflow: hidden;
+  min-height: 150px;
+}
+.wf {
+  display: block;
+  width: 100%;
+  height: 150px;
+  cursor: crosshair;
+}
+.wf-wave {
+  fill: var(--brand);
+  opacity: 0.5;
+}
+.wf-mid {
+  stroke: var(--border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.wf-bar {
+  stroke: var(--fg);
+  opacity: 0.35;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.wf-beat {
+  stroke: var(--fg);
+  opacity: 0.15;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.wf-cue {
+  stroke: var(--warn);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.wf-flag {
+  fill: var(--warn);
+}
+.wf-letter {
+  fill: #111;
+  font: 700 11px var(--font);
+}
+.wf-loop {
+  fill: var(--ok);
+  opacity: 0.22;
+}
+.wf-head {
+  stroke: var(--bad);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.wave-bar {
+  flex-wrap: wrap;
+}
+.field-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.field-inline select {
+  width: auto;
+}
+.wave-bar .seek {
+  max-width: 240px;
+}
+
+/* Prepare controls */
+.prep-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.controls-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.controls-row .field-label {
+  min-width: 66px;
+}
+.controls-row .field-label.sep {
+  min-width: 0;
+  margin-left: 10px;
+}
+.controls-row input[type="number"] {
+  width: 90px;
+}
+.controls-row select {
+  width: auto;
+  min-width: 120px;
+}
+.key-chip,
+.crate-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--muted);
+  padding: 1px 10px;
+  font-size: 12px;
+}
+.chip-x {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--muted-fg);
+  padding: 0;
+  cursor: pointer;
+}
+.cues {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cues-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cues-head h3 {
+  margin: 0;
+}
+.cue-row {
+  display: grid;
+  grid-template-columns: 24px 70px minmax(120px, 1fr) repeat(5, auto);
+  gap: 6px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  min-height: 38px;
+}
+.cue-row:not(.set) {
+  color: var(--muted-fg);
+}
+.cue-slot {
+  font-weight: 700;
+}
+.cue-time {
+  font: 12px var(--mono);
+}
+.cue-name {
+  width: 100%;
+}
+.tempo-note:empty,
+.stage .why:empty {
+  display: none;
+}
+
+/* Deliver */
+.deliver-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.deliver-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-height: 52px;
+}
+.deliver-row.off {
+  opacity: 0.6;
+}
+.deliver-row select {
+  width: auto;
+  min-width: 180px;
+  margin-left: auto;
+}
+.deliver-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.folder-input {
+  flex: 1;
+  min-width: 240px;
+}
+.written {
+  min-height: 90px;
+}
+.files {
+  margin: 0;
+  padding-left: 18px;
+  font: 12px var(--mono);
+  word-break: break-all;
+}
+
+/* Library with crates */
+.library.with-crates {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .library.with-crates {
+    grid-template-columns: 1fr;
+  }
+}
+.crates h2 {
+  margin-bottom: 8px;
+}
+.crate-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.crate {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.crate.on {
+  border-color: var(--brand);
+  background: var(--accent);
+}
+.crate-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font: inherit;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  padding: 5px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.crate-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crate-new {
+  display: flex;
+  gap: 6px;
+}
+.crate-new input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--fg);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.crate-note {
+  min-height: 18px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--bad);
+}
+.crate .rename {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 3px 6px;
+}
+.btn.danger {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
+}
+.projects .num {
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+.crate-cell {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.crate-cell select {
+  width: auto;
+  min-width: 110px;
+  padding: 2px 6px;
+}

@@ -12,6 +12,9 @@ test("both tools are registered under their names", () => {
     "music_stems",
     "music_sfx",
     "music_mix",
+    "music_master",
+    "music_prepare",
+    "music_deliver",
   ]);
 });
 

@@ -1,19 +1,27 @@
 /** The page's one way to ask its extension: relative `api/<path>`, JSON both ways. */
 
 import type { ListItem, ProjectView } from "../../panel-router";
+import type { CrateItem } from "../../routes/crates";
 import type { Job, Status } from "../../studio";
 
 export type {
   ArrangeView,
+  DeliverOutcome,
+  DeliverView,
   LayerItem,
+  MasterItem,
+  MasterView,
   MixAnswer,
   MixTrack,
   MixView,
+  PrepareView,
+  PrepDescribed,
+  PrepEdit,
   ProduceView,
   StartAnswer,
   VersionItem,
 } from "../../routes/views";
-export type { Job, ListItem, ProjectView, Status };
+export type { CrateItem, Job, ListItem, ProjectView, Status };
 
 export type SketchAnswer =
   | { ok: true; job: Job }

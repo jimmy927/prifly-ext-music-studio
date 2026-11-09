@@ -5,11 +5,16 @@
  */
 
 import type { PanelRequest } from "@prifly/extension-api";
-import { type IndexEntry, isSketchId } from "./project/store";
+import { isSketchId } from "./project/store";
 import { arrangeRoutes } from "./routes/arrange";
 import { bodyOf, entryOf, type Handler, startedAnswer } from "./routes/common";
+import { crateRoutes } from "./routes/crates";
+import { deliverRoutes } from "./routes/deliver";
+import { type ListItem, libraryRoute, listItem } from "./routes/library";
+import { masterRoutes } from "./routes/master";
 import { media } from "./routes/media";
 import { mixRoutes } from "./routes/mix";
+import { prepareRoutes } from "./routes/prepare";
 import { produceRoutes } from "./routes/produce";
 import { type Studio, startSketch, statusOf } from "./studio";
 
@@ -18,19 +23,11 @@ const STAGE_ROUTES: Record<string, Handler> = {
   ...arrangeRoutes,
   ...produceRoutes,
   ...mixRoutes,
+  ...masterRoutes,
+  ...prepareRoutes,
+  ...deliverRoutes,
+  ...crateRoutes,
 };
-
-function listItem(entry: IndexEntry) {
-  return {
-    id: entry.id,
-    title: entry.title,
-    engine: entry.engine,
-    lengthSec: entry.lengthSec,
-    created: entry.created,
-    sketches: entry.sketches,
-    chosen: entry.chosen,
-  };
-}
 
 async function projectView(studio: Studio, id: unknown) {
   const entry = await entryOf(studio, id);
@@ -64,7 +61,7 @@ export async function route(studio: Studio, request: PanelRequest): Promise<unkn
     case "status":
       return await statusOf(studio);
     case "library":
-      return { projects: (await studio.store().list(query["q"] ?? "")).map(listItem) };
+      return await libraryRoute(studio, query["q"] ?? "", query["crate"] ?? "");
     case "project":
       return await projectView(studio, query["id"]);
     case "media":
@@ -92,5 +89,5 @@ export async function route(studio: Studio, request: PanelRequest): Promise<unkn
   }
 }
 
-export type ListItem = ReturnType<typeof listItem>;
+export type { ListItem };
 export type ProjectView = Awaited<ReturnType<typeof projectView>>;

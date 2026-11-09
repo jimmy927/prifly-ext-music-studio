@@ -1,7 +1,7 @@
 {
   "id": "music-studio",
   "name": "Music Studio",
-  "description": "Take a song idea to three 30-second sketches with ElevenLabs Music or Lyria, keep them in a library, and (in later versions) arrange, mix, master and film it. Every paid step waits for your confirm.",
+  "description": "Take a song idea to sketches, an arrangement, stems and a mix with ElevenLabs Music or Lyria, then master it, prepare it for DJing (BPM, key, beatgrid, cues, crates) and deliver stems, masters and rekordbox files. Every paid step waits for your confirm; mastering, preparing and delivering run on this computer.",
   "version": "0.1.0",
   "main": "index.ts",
   "panels": [
@@ -32,7 +32,7 @@
     {
       "id": "ffmpegPath",
       "label": "ffmpeg path",
-      "description": "Mix renders the final mix with ffmpeg. Leave empty to use ffmpeg from the PATH.",
+      "description": "Mix, Master, Prepare and Deliver use ffmpeg. Leave empty to use ffmpeg from the PATH.",
       "type": "string",
       "default": ""
     },
