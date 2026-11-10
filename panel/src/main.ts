@@ -6,8 +6,9 @@
 
 import { mountArrange } from "./arrange";
 import { mountDeliver } from "./deliver";
-import { h } from "./dom";
+import { fill, h } from "./dom";
 import { mountEdit } from "./edit";
+import { renderFollow, renderFollowNote, startFollowing } from "./follow";
 import { loadStatus, renderHeader, renderStageBar } from "./header";
 import { mountIdea } from "./idea";
 import { loadLibrary, mountLibrary } from "./library";
@@ -50,16 +51,28 @@ addEventListener("message", (event: MessageEvent) => {
   }
 });
 
+startFollowing();
+const docked = app.follow.session !== null;
+const followSlot = h("div", { class: "follow-slot" });
+const followNote = h("div", { class: "follow-note-slot" });
 const head = h(
   "header",
   { class: "top" },
   h("h1", null, "Music Studio"),
+  followSlot,
   h("span", { class: "grow" }),
 );
 const statusSlot = h("div", { class: "status-slot" });
 const bar = h("div", { class: "bar-slot" });
 const body = h("main", { class: "body" });
-const root = h("div", { class: "studio", "data-part": "studio" }, head, bar, body);
+const root = h(
+  "div",
+  { class: "studio", "data-part": "studio" },
+  head,
+  docked ? followNote : null,
+  bar,
+  body,
+);
 head.append(statusSlot);
 document.body.replaceChildren(root);
 
@@ -84,6 +97,8 @@ function stage() {
 }
 
 function drawHead(): void {
+  fill(followSlot, renderFollow());
+  fill(followNote, renderFollowNote());
   statusSlot.replaceChildren(renderHeader());
   bar.replaceChildren(renderStageBar());
 }

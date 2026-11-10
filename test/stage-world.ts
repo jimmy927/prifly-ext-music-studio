@@ -126,7 +126,7 @@ export const ask = (
   path: string,
   query: Record<string, string> = {},
   body: unknown = null,
-) => route(w.studio, { path, query, body });
+) => route(w.studio, { path, query: { session: "docked-session", ...query }, body });
 
 /** Waits until the job is no longer running. */
 export async function finished(w: World, id: string): Promise<Job> {

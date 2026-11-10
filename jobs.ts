@@ -6,6 +6,7 @@
  */
 
 import type { ExtensionApi } from "@prifly/extension-api";
+import { askReader } from "./confirm";
 import type { IndexEntry, Store } from "./project/store";
 import {
   endFailed,
@@ -66,9 +67,10 @@ export async function launch(
   if (busy(studio)) return fail("invalid", "Another run is still going. Wait for it or cancel it.");
   const api = studio.api();
   if (work.confirm !== null) {
-    if (api.confirm === undefined)
+    const answer = await askReader(api, work.confirm);
+    if (answer === null)
       return fail("unsupported", "This prifly cannot ask you first. Update prifly.");
-    if (!(await api.confirm(work.confirm))) return fail("cancelled", "Not done: you cancelled.");
+    if (!answer) return fail("cancelled", "Not done: you cancelled.");
     // Another call may have started while the card was open.
     if (busy(studio))
       return fail("invalid", "Another run is still going. Wait for it or cancel it.");

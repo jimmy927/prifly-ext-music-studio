@@ -33,6 +33,38 @@
   display: flex;
   gap: 8px;
 }
+/* Following the session the window is docked beside: the button never moves, the text after it may. */
+.follow-slot {
+  min-width: 0;
+}
+.follow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.follow-toggle {
+  flex: none;
+  min-width: 86px;
+  justify-content: center;
+}
+.follow-toggle.on {
+  border-color: var(--brand);
+}
+.follow-line {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--muted-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.follow-note {
+  min-height: 20px;
+  margin: -6px 0 0;
+  font-size: 12px;
+  color: var(--muted-fg);
+}
 .stage-note {
   min-height: 20px;
   margin: 6px 0 0;

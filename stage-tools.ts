@@ -16,21 +16,32 @@ import { baseOf } from "./project/source";
 import { layers, readMix, readStems, versions, writeMix } from "./project/stage";
 import type { IndexEntry } from "./project/store";
 import { tracksOf } from "./project/tracks";
+import { noteProject, sessionProject } from "./session";
 import type { Job, Started, Studio } from "./studio";
 import { CANCELLED } from "./tools";
 
 type Tool = ExtensionTool;
 
-/** The project a call names (`project` is its id), else the newest. */
+/**
+ * The project a call names (`project` is its id), else the calling session's
+ * own, else the newest. The project it finds is linked to the calling session.
+ */
 export async function projectOf(
   studio: Studio,
   args: Record<string, unknown>,
 ): Promise<IndexEntry | string> {
   const store = studio.store();
-  if (typeof args["project"] === "string") {
-    return (await store.find(args["project"])) ?? `No project has the id ${args["project"]}.`;
-  }
-  return (await store.list())[0] ?? "The library is empty. Make sketches first.";
+  const named = typeof args["project"] === "string" ? args["project"] : null;
+  const entry =
+    named === null
+      ? ((await sessionProject(studio)) ?? (await store.list())[0] ?? null)
+      : await store.find(named);
+  if (entry === null)
+    return named === null
+      ? "The library is empty. Make sketches first."
+      : `No project has the id ${named}.`;
+  await noteProject(studio, entry.id);
+  return entry;
 }
 
 const number = (value: unknown): number | null =>

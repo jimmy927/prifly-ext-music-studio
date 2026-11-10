@@ -5,6 +5,7 @@
  */
 
 import type { PanelRequest } from "@prifly/extension-api";
+import { panelRequest } from "./confirm";
 import { isSketchId } from "./project/store";
 import { arrangeRoutes } from "./routes/arrange";
 import { bodyOf, entryOf, type Handler, startedAnswer } from "./routes/common";
@@ -21,6 +22,7 @@ import { shootRoutes } from "./routes/shoot";
 import { storyboardRoutes } from "./routes/storyboard";
 import { treatmentRoutes } from "./routes/treatment";
 import { tempoOf } from "./routes/video-common";
+import { followRoute } from "./session";
 import { type Studio, startSketch, statusOf } from "./studio";
 
 /** The routes of the stages after Idea, one file each; a later stage adds its own here. */
@@ -65,10 +67,23 @@ async function sketch(studio: Studio, request: PanelRequest) {
   return startedAnswer(await startSketch(studio, request.body));
 }
 
-/** The module's `panel` export for the Music Studio window. */
+/**
+ * The module's `panel` export for the Music Studio window. Every request may
+ * carry `session`, the session the window is docked beside: the cards a paid
+ * button raises are asked over it (see confirm.ts).
+ */
 export async function route(studio: Studio, request: PanelRequest): Promise<unknown> {
+  const session = request.query["session"] ?? "";
+  return await panelRequest.run({ session: session === "" ? null : session }, () =>
+    answer(studio, request),
+  );
+}
+
+async function answer(studio: Studio, request: PanelRequest): Promise<unknown> {
   const { path, query } = request;
   switch (path) {
+    case "follow":
+      return await followRoute(studio, query["session"] ?? "");
     case "status":
       return await statusOf(studio);
     case "library":

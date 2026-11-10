@@ -144,8 +144,18 @@ var barStartMs = (bar, tempo) => Math.max(0, Math.round((bar - 1) * barMs(tempo)
 var barsIn = (ms, tempo) => Math.round(ms / barMs(tempo) * 10) / 10;
 
 // panel/src/api.ts
+function panelSession() {
+  const id = new URLSearchParams(location.search).get("session");
+  return id === null || id === "" ? null : id;
+}
+function withSession(path) {
+  const session = panelSession();
+  if (session === null)
+    return path;
+  return `${path}${path.includes("?") ? "&" : "?"}session=${encodeURIComponent(session)}`;
+}
 async function call(path, body) {
-  const response = await fetch(`api/${path}`, {
+  const response = await fetch(`api/${withSession(path)}`, {
     method: body === undefined ? "GET" : "POST",
     ...body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
   });
@@ -388,7 +398,8 @@ var app = {
   confirming: false,
   notice: null,
   refusal: null,
-  library: { projects: null, query: "", error: null, crate: "", crates: [] }
+  library: { projects: null, query: "", error: null, crate: "", crates: [] },
+  follow: { session: null, on: false, view: null, error: null, stamp: 0, project: null }
 };
 var listeners = new Set;
 var onRedraw = (listener) => void listeners.add(listener);
@@ -1520,6 +1531,123 @@ function mountEdit() {
   };
 }
 
+// panel/src/follow.ts
+var POLL_MS3 = 2000;
+var NO_PROJECT_TEXT = "This session has no Music Studio project yet. Ask Claude to start one.";
+var UNKNOWN_TEXT = "Prifly does not know this session, so there is no project to follow.";
+var DELETED_TEXT = "The project this session was working on has been deleted.";
+function noteFor(view, error) {
+  if (error !== null)
+    return `Could not ask which project the session works on: ${error}`;
+  if (view?.state === "none")
+    return NO_PROJECT_TEXT;
+  if (view?.state === "unknown")
+    return UNKNOWN_TEXT;
+  if (view?.state === "deleted")
+    return DELETED_TEXT;
+  return "";
+}
+var busy2 = false;
+var timer;
+async function openProject(id, stage) {
+  const project = await call(`project?id=${encodeURIComponent(id)}`);
+  app.project = project;
+  if (project.brief !== null)
+    app.draft = { ...project.brief };
+  app.job = null;
+  app.notice = null;
+  app.refusal = null;
+  go(stage !== null && gate(stage).enabled ? stage : "idea");
+}
+async function apply(view) {
+  const follow = app.follow;
+  const called = view.stamp > 0 && view.stamp !== follow.stamp;
+  const changed = view.project !== null && view.project !== follow.project;
+  follow.stamp = view.stamp;
+  follow.project = view.project;
+  if (view.project === null)
+    return;
+  if (changed) {
+    await openProject(view.project, view.stage);
+  } else if (called && view.stage !== null) {
+    app.project = await call(`project?id=${encodeURIComponent(view.project)}`);
+    go(gate(view.stage).enabled ? view.stage : app.view);
+  }
+}
+async function pollFollow() {
+  const follow = app.follow;
+  const session = follow.session;
+  if (session === null || busy2)
+    return;
+  busy2 = true;
+  try {
+    follow.view = await call(`follow?session=${encodeURIComponent(session)}`);
+    follow.error = null;
+    if (follow.on)
+      await apply(follow.view);
+  } catch (caught) {
+    follow.error = errorText(caught);
+  } finally {
+    busy2 = false;
+  }
+  redraw("head");
+}
+function schedule() {
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    if (document.visibilityState === "visible" && app.follow.on)
+      pollFollow();
+    schedule();
+  }, POLL_MS3);
+}
+function startFollowing() {
+  const session = panelSession();
+  if (session === null)
+    return;
+  app.follow = { session, on: true, view: null, error: null, stamp: 0, project: null };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && app.follow.on)
+      pollFollow();
+  });
+  pollFollow();
+  schedule();
+}
+function toggle() {
+  const follow = app.follow;
+  follow.on = !follow.on;
+  follow.stamp = 0;
+  follow.project = null;
+  redraw("head");
+  if (follow.on)
+    pollFollow();
+}
+function label() {
+  const { on, view } = app.follow;
+  const title = view?.session?.title;
+  if (title === undefined)
+    return on ? "Following this session" : "Not following this session";
+  return `${on ? "Following" : "Not following"} ${title}`;
+}
+function renderFollow() {
+  const follow = app.follow;
+  if (follow.session === null)
+    return null;
+  const project = follow.view?.projectTitle;
+  return h("div", { class: "follow", "data-part": "follow" }, h("button", {
+    type: "button",
+    class: `btn small follow-toggle${follow.on ? " on" : ""}`,
+    "aria-pressed": String(follow.on),
+    title: follow.on ? "Stop moving with the session" : "Move with the session again",
+    onclick: toggle
+  }, follow.on ? "Follow: on" : "Follow: off"), h("span", { class: "follow-line", ...project == null ? {} : { title: `Project: ${project}` } }, label()));
+}
+function renderFollowNote() {
+  const follow = app.follow;
+  if (follow.session === null)
+    return null;
+  return h("p", { class: "follow-note", "data-part": "follow-note", role: "status" }, follow.on ? noteFor(follow.view, follow.error) : "");
+}
+
 // panel/src/form.ts
 var NOTES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 var KEYS = NOTES.flatMap((note) => [`${note} major`, `${note} minor`]);
@@ -1656,8 +1784,8 @@ function renderSketches(cancel, cancelling) {
 }
 
 // panel/src/idea.ts
-var POLL_MS3 = 1500;
-var timer = null;
+var POLL_MS4 = 1500;
+var timer2 = null;
 var cancelling = false;
 function blocker4() {
   const status = app.status;
@@ -1709,7 +1837,7 @@ async function poll3() {
     else
       app.project = null;
     if (job.status === "running")
-      timer = setTimeout(() => void poll3(), POLL_MS3);
+      timer2 = setTimeout(() => void poll3(), POLL_MS4);
     else {
       cancelling = false;
       ended3(job);
@@ -1721,8 +1849,8 @@ async function poll3() {
   redraw("idea");
 }
 function startPolling() {
-  if (timer !== null)
-    clearTimeout(timer);
+  if (timer2 !== null)
+    clearTimeout(timer2);
   poll3();
 }
 async function sketch() {
@@ -2988,7 +3116,7 @@ var playNote = h("span", { class: "player-note", role: "status" });
 var wave = new Waveform((sec) => seek2(sec));
 var analyseButton = h("button", { type: "button", class: "btn primary big", id: "analyse", onclick: () => void analyse() }, icon("wave"), "Analyse");
 var cancelButton4 = h("button", { type: "button", class: "btn", id: "analyse-cancel", onclick: () => void cancelLocal() }, "Cancel");
-var playButton2 = h("button", { type: "button", class: "btn", id: "prep-play", onclick: () => void toggle() }, icon("play", 14), "Play");
+var playButton2 = h("button", { type: "button", class: "btn", id: "prep-play", onclick: () => void toggle2() }, icon("play", 14), "Play");
 var zoom = h("select", { id: "wave-zoom", "aria-label": "Zoom" }, ...ZOOMS.map((each) => h("option", { value: String(each.span) }, each.label)));
 var scroll = h("input", {
   type: "range",
@@ -3039,7 +3167,7 @@ function follow2() {
     frame = requestAnimationFrame(follow2);
   }
 }
-async function toggle() {
+async function toggle2() {
   const source = prep()?.source;
   const project = app.project;
   if (source === undefined || project === null)
@@ -4041,11 +4169,15 @@ addEventListener("message", (event) => {
       document.documentElement.style.setProperty(ours, value);
   }
 });
-var head = h("header", { class: "top" }, h("h1", null, "Music Studio"), h("span", { class: "grow" }));
+startFollowing();
+var docked = app.follow.session !== null;
+var followSlot = h("div", { class: "follow-slot" });
+var followNote = h("div", { class: "follow-note-slot" });
+var head = h("header", { class: "top" }, h("h1", null, "Music Studio"), followSlot, h("span", { class: "grow" }));
 var statusSlot = h("div", { class: "status-slot" });
 var bar2 = h("div", { class: "bar-slot" });
 var body = h("main", { class: "body" });
-var root = h("div", { class: "studio", "data-part": "studio" }, head, bar2, body);
+var root = h("div", { class: "studio", "data-part": "studio" }, head, docked ? followNote : null, bar2, body);
 head.append(statusSlot);
 document.body.replaceChildren(root);
 var idea = mountIdea();
@@ -4066,6 +4198,8 @@ function stage() {
   return STAGES.includes(app.view) ? stages[app.view] : null;
 }
 function drawHead() {
+  fill(followSlot, renderFollow());
+  fill(followNote, renderFollowNote());
   statusSlot.replaceChildren(renderHeader());
   bar2.replaceChildren(renderStageBar());
 }

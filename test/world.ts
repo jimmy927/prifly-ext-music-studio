@@ -7,13 +7,9 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deliverTool, masterTool, prepareTool } from "../dj-tools";
+import { allTools } from "../all-tools";
 import type { Fetch } from "../engines/types";
-import { arrangeTool, mixTool, sfxTool, stemsTool } from "../stage-tools";
 import { Studio } from "../studio";
-import { libraryTool, sketchTool } from "../tools";
-import { storyboardTool, treatmentTool } from "../video-tools";
-import { editTool, renderTool, shootTool } from "../video-tools-make";
 import { type FakeApi, fakeApi } from "./fake-api";
 
 export type Call = {
@@ -125,7 +121,15 @@ export type World = {
  */
 export function world(
   handler: Handler,
-  options: { keys?: Record<string, string>; confirm?: boolean; ffmpegPath?: string } = {},
+  options: {
+    keys?: Record<string, string>;
+    confirm?: boolean;
+    ffmpegPath?: string;
+    /** As prifly does: `api.confirm` outside a tool call and with no session answers no. */
+    confirmNeedsSession?: boolean;
+    /** What the reader answers `api.dialog`; null (the default) is a cancel. */
+    dialog?: string | null;
+  } = {},
 ): World {
   const folder = mkdtempSync(join(tmpdir(), "music-studio-library-"));
   const fake = fakeApi({
@@ -137,6 +141,10 @@ export function world(
     },
     secrets: options.keys ?? { elevenlabsKey: "xi-test", geminiKey: "g-test" },
     confirm: options.confirm ?? true,
+    ...(options.confirmNeedsSession === undefined
+      ? {}
+      : { confirmNeedsSession: options.confirmNeedsSession }),
+    ...(options.dialog === undefined ? {} : { dialog: options.dialog }),
   });
   const calls: Call[] = [];
   const fetchFn: Fetch = async (input, init) => {
@@ -158,22 +166,7 @@ export function world(
     pollMs: 1,
     renderSize: { width: 160, height: 90 },
   });
-  fake.api.tools?.register([
-    sketchTool(studio),
-    libraryTool(studio),
-    arrangeTool(studio),
-    stemsTool(studio),
-    sfxTool(studio),
-    mixTool(studio),
-    masterTool(studio),
-    prepareTool(studio),
-    deliverTool(studio),
-    treatmentTool(studio),
-    storyboardTool(studio),
-    shootTool(studio),
-    editTool(studio),
-    renderTool(studio),
-  ]);
+  fake.api.tools?.register(allTools(studio));
   return { fake, studio, calls, folder, callTool: fake.callTool };
 }
 

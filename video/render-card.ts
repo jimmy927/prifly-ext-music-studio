@@ -5,6 +5,7 @@
  * preview is light and asks nothing.
  */
 
+import { askReader } from "../confirm";
 import type { Confirm } from "../jobs";
 import type { RenderKind } from "../project/video-media";
 import type { Studio } from "../studio";
@@ -28,7 +29,6 @@ export async function askToRender(
   kind: Exclude<RenderKind, "preview">,
   videoSec: number,
 ): Promise<boolean | string> {
-  const api = studio.api();
-  if (api.confirm === undefined) return "This prifly cannot ask you first. Update prifly.";
-  return await api.confirm(renderCard(kind, videoSec));
+  const answer = await askReader(studio.api(), renderCard(kind, videoSec), "Render");
+  return answer ?? "This prifly cannot ask you first. Update prifly.";
 }

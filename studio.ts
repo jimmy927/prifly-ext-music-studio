@@ -6,6 +6,7 @@
 
 import type { ExtensionApi } from "@prifly/extension-api";
 import { ffmpegBinary } from "./audio/ffmpeg";
+import { askReader } from "./confirm";
 import { type Credits, composeDetailed, credits as elevenCredits } from "./engines/elevenlabs";
 import { lyria } from "./engines/gemini";
 import { EngineError, type EngineErrorKind, type Fetch, type Sketched } from "./engines/types";
@@ -21,6 +22,7 @@ import {
 } from "./project/brief";
 import { Crates } from "./project/crates";
 import { type IndexEntry, libraryFolder, Store } from "./project/store";
+import { noteProject } from "./session";
 
 export type Deps = {
   api: () => ExtensionApi | null;
@@ -248,21 +250,23 @@ async function run(
   signal: AbortSignal,
 ) {
   const store = studio.store();
+  let failure: { caught: unknown } | null = null;
   try {
     for (const id of SKETCH_IDS) {
       if (signal.aborted) break;
       await store.saveSketch(entry, id, await makeOne(studio, brief, key, signal), brief.engine);
       job.done.push(id);
     }
-    job.status = signal.aborted ? "cancelled" : "done";
   } catch (caught) {
-    endFailed(job, caught, signal);
+    failure = { caught };
   }
-  // A project with no sketch is only clutter in the library.
+  // A project with no sketch is only clutter in the library. The run ends only after it is gone.
   if (job.done.length === 0) {
     await store.remove(entry);
     job.project = null;
   }
+  if (failure !== null) endFailed(job, failure.caught, signal);
+  else job.status = signal.aborted ? "cancelled" : "done";
   studio.release(job.id);
   return job;
 }
@@ -284,12 +288,12 @@ export async function startSketch(
     const which = brief.engine === "elevenlabs" ? "ElevenLabs" : "Gemini";
     return fail("no_key", `There is no ${which} key. ${SETTINGS_HINT}`);
   }
-  const api = studio.api();
-  if (api.confirm === undefined)
+  const answer = await askReader(studio.api(), confirmSpec(brief));
+  if (answer === null)
     return fail("unsupported", "This prifly cannot ask you first. Update prifly.");
-  if (!(await api.confirm(confirmSpec(brief))))
-    return fail("cancelled", "Not done: you cancelled.");
+  if (!answer) return fail("cancelled", "Not done: you cancelled.");
   const entry = await studio.store().create(brief, titleOf(brief));
+  await noteProject(studio, entry.id);
   const job: Job = {
     id: crypto.randomUUID().slice(0, 8),
     work: "sketch",

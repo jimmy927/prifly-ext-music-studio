@@ -19,6 +19,7 @@ import type {
   AskSnoozeSpec,
   ConfirmSpec,
   Decoration,
+  DialogSpec,
   ExtensionApi,
   ExtensionConnection,
   ExtensionConnectionsApi,
@@ -234,6 +235,10 @@ export type FakeApi = {
   statuses: string[];
   /** What `api.state` holds. */
   documents: Map<string, unknown>;
+  /** Every dialog `api.dialog` was asked to show. */
+  dialogs: DialogSpec[];
+  /** The sessions `api.session` knows, by id. */
+  knownSessions: Map<string, { title: string; cwd: string }>;
 };
 
 /**
@@ -249,6 +254,10 @@ export function fakeApi(
     secrets?: Record<string, string>;
     folder?: string;
     confirm?: boolean;
+    /** Answer `api.confirm` with no, as prifly does, when it has no session and no tool call is running. */
+    confirmNeedsSession?: boolean;
+    /** What the reader answers every `api.dialog`: the text they confirm, or null for cancel. Default: as `confirm`. */
+    dialog?: string | null;
     /** What the reader answers every `api.askSnooze` card; default: a no. */
     askSnooze?: AskSnoozeAnswer;
   } = {},
@@ -269,6 +278,8 @@ export function fakeApi(
     snoozeAsks: [],
     statuses: [],
     documents,
+    dialogs: [],
+    knownSessions: new Map(),
   };
   const api: ExtensionApi = {
     features: [
@@ -293,7 +304,10 @@ export function fakeApi(
     },
     state,
     confirm: async (spec) => {
-      fake.confirms.push({ ...spec, session: spec.sessionId ?? calling });
+      const session = spec.sessionId ?? calling;
+      fake.confirms.push({ ...spec, session });
+      // prifly answers a card with no session to ask over at once with no (ext.confirm_no_session).
+      if (session === null && options.confirmNeedsSession === true) return false;
       return options.confirm ?? true;
     },
     status: (text) => void fake.statuses.push(text),
@@ -318,7 +332,10 @@ export function fakeApi(
     onAction: () => undefined,
     onRent: () => undefined,
     sessions: () => [],
-    session: () => null,
+    session: (id) => {
+      const known = fake.knownSessions.get(id);
+      return known === undefined ? null : { id, title: known.title, cwd: known.cwd, state: "idle" };
+    },
     log: (event, fields) => void fake.logs.push({ event, fields }),
     folder: options.folder ?? process.cwd(),
     paths: [],
@@ -332,7 +349,12 @@ export function fakeApi(
       fake.snoozeAsks.push({ ...spec, sessionId });
       return options.askSnooze ?? { ok: false, reason: "cancelled" };
     },
-    dialog: async () => null,
+    dialog: (async (spec: DialogSpec) => {
+      fake.dialogs.push(spec);
+      // Left out, the reader answers a dialog as they answer a card.
+      if (options.dialog !== undefined) return options.dialog;
+      return (options.confirm ?? true) ? "" : null;
+    }) as ExtensionApi["dialog"],
   };
   const callTool: FakeApi["callTool"] = async (name, args, pick = null) => {
     const tool = tools.find((each) => each.name === name);
