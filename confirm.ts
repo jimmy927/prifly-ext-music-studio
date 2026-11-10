@@ -9,6 +9,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ConfirmSpec, ExtensionApi } from "@prifly/extension-api";
+import { sessionOf } from "./session";
 
 /** The panel request being answered: the session its window is docked beside, or null. */
 export const panelRequest = new AsyncLocalStorage<{ session: string | null }>();
@@ -28,7 +29,8 @@ export async function askReader(
 ): Promise<boolean | null> {
   const panel = panelRequest.getStore();
   if (panel === undefined) return api.confirm === undefined ? null : await api.confirm(spec);
-  if (panel.session !== null) {
+  // A session prifly no longer knows has no card to show on: prifly would answer no at once.
+  if (panel.session !== null && sessionOf(api, panel.session) !== null) {
     if (api.confirm === undefined) return null;
     return await api.confirm({ ...spec, sessionId: panel.session });
   }

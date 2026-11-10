@@ -48,10 +48,14 @@ async function apply(view: FollowView): Promise<void> {
   const called = view.stamp > 0 && view.stamp !== follow.stamp;
   const changed = view.project !== null && view.project !== follow.project;
   follow.stamp = view.stamp;
-  follow.project = view.project;
-  if (view.project === null) return;
+  if (view.project === null) {
+    follow.project = null;
+    return;
+  }
   if (changed) {
+    // Only once it opened, so a failed open is tried again at the next poll.
     await openProject(view.project, view.stage);
+    follow.project = view.project;
   } else if (called && view.stage !== null) {
     app.project = await call<ProjectView>(`project?id=${encodeURIComponent(view.project)}`);
     go(gate(view.stage).enabled ? view.stage : app.view);
@@ -65,7 +69,7 @@ export async function pollFollow(): Promise<void> {
   if (session === null || busy) return;
   busy = true;
   try {
-    follow.view = await call<FollowView>(`follow?session=${encodeURIComponent(session)}`);
+    follow.view = await call<FollowView>("follow");
     follow.error = null;
     if (follow.on) await apply(follow.view);
   } catch (caught) {

@@ -262,8 +262,12 @@ async function run(
   }
   // A project with no sketch is only clutter in the library. The run ends only after it is gone.
   if (job.done.length === 0) {
-    await store.remove(entry);
-    job.project = null;
+    try {
+      await store.remove(entry);
+      job.project = null;
+    } catch (caught) {
+      failure ??= { caught };
+    }
   }
   if (failure !== null) endFailed(job, failure.caught, signal);
   else job.status = signal.aborted ? "cancelled" : "done";

@@ -127,7 +127,7 @@ export function world(
     ffmpegPath?: string;
     /** As prifly does: `api.confirm` outside a tool call and with no session answers no. */
     confirmNeedsSession?: boolean;
-    /** What the reader answers `api.dialog`; null (the default) is a cancel. */
+    /** What the reader answers `api.dialog`; null is a cancel; left out, it answers as `confirm` does. */
     dialog?: string | null;
   } = {},
 ): World {
@@ -167,6 +167,8 @@ export function world(
     renderSize: { width: 160, height: 90 },
   });
   fake.api.tools?.register(allTools(studio));
+  // The session the panel tests' requests say they are docked beside.
+  fake.knownSessions.set("docked-session", { title: "Docked", cwd: "/work" });
   return { fake, studio, calls, folder, callTool: fake.callTool };
 }
 

@@ -17,13 +17,9 @@ async function settle(w: World, id: string): Promise<void> {
   }
 }
 
-test("the bug: with no session and no tool call, prifly's confirm says no at once", async () => {
-  const w = world(happy, { confirmNeedsSession: true });
-  expect(await w.fake.api.confirm?.({ title: "t", summary: "s", details: "d" })).toBe(false);
-});
-
 test("a panel button on a docked panel asks over the panel's session", async () => {
   const w = world(happy, { confirmNeedsSession: true });
+  w.fake.knownSessions.set("session-1", { title: "Chat", cwd: "/work" });
   const started = await sketch(w, { session: "session-1" });
   if (!started.ok) throw new Error(started.message);
   expect(w.fake.confirms).toHaveLength(1);
@@ -33,8 +29,18 @@ test("a panel button on a docked panel asks over the panel's session", async () 
   await settle(w, started.job.id);
 });
 
+test("a docked session prifly no longer knows is asked in a dialog, not on a card that would be refused", async () => {
+  const w = world(happy, { confirmNeedsSession: true });
+  const started = await sketch(w, { session: "gone" });
+  if (!started.ok) throw new Error(started.message);
+  expect(w.fake.dialogs).toHaveLength(1);
+  expect(w.fake.confirms).toHaveLength(0);
+  await settle(w, started.job.id);
+});
+
 test("a session card the reader declines is a cancel, nothing is made", async () => {
   const w = world(happy, { confirmNeedsSession: true, confirm: false });
+  w.fake.knownSessions.set("session-1", { title: "Chat", cwd: "/work" });
   const started = await sketch(w, { session: "session-1" });
   expect(started).toMatchObject({ ok: false, reason: "cancelled" });
   expect(w.calls.some((each) => each.url.endsWith("/v1/music/detailed"))).toBe(false);

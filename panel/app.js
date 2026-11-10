@@ -1564,11 +1564,13 @@ async function apply(view) {
   const called = view.stamp > 0 && view.stamp !== follow.stamp;
   const changed = view.project !== null && view.project !== follow.project;
   follow.stamp = view.stamp;
-  follow.project = view.project;
-  if (view.project === null)
+  if (view.project === null) {
+    follow.project = null;
     return;
+  }
   if (changed) {
     await openProject(view.project, view.stage);
+    follow.project = view.project;
   } else if (called && view.stage !== null) {
     app.project = await call(`project?id=${encodeURIComponent(view.project)}`);
     go(gate(view.stage).enabled ? view.stage : app.view);
@@ -1581,7 +1583,7 @@ async function pollFollow() {
     return;
   busy2 = true;
   try {
-    follow.view = await call(`follow?session=${encodeURIComponent(session)}`);
+    follow.view = await call("follow");
     follow.error = null;
     if (follow.on)
       await apply(follow.view);

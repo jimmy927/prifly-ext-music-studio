@@ -87,7 +87,8 @@ export async function noteProject(studio: Studio, project: string): Promise<void
   }
 }
 
-function sessionOf(api: ExtensionApi, id: string): ExtensionSession | null {
+/** The session prifly knows by this id, or null (also on a prifly without session lookup). */
+export function sessionOf(api: ExtensionApi, id: string): ExtensionSession | null {
   try {
     return api.session(id);
   } catch {
