@@ -8,6 +8,7 @@ test("both tools are registered under their names", () => {
   expect(w.fake.tools().map((tool) => tool.name)).toEqual([
     "music_sketch",
     "music_library",
+    "music_choose",
     "music_arrange",
     "music_stems",
     "music_sfx",

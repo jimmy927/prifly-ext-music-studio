@@ -78,6 +78,7 @@ test("activate registers the tools and the panel module answers its routes", asy
   expect(fake.tools().map((tool) => tool.name)).toEqual([
     "music_sketch",
     "music_library",
+    "music_choose",
     "music_arrange",
     "music_stems",
     "music_sfx",

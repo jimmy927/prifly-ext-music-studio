@@ -28,6 +28,7 @@ export type StageId =
 /** The stage of the panel a tool's work belongs to. */
 export const STAGE_OF_TOOL: Readonly<Record<string, StageId>> = {
   music_sketch: "idea",
+  music_choose: "idea",
   music_arrange: "arrange",
   music_stems: "produce",
   music_sfx: "produce",

@@ -13,8 +13,8 @@ import { isRecord } from "./engines/types";
 import { renderMix } from "./mix/render";
 import { startSfx, startStems } from "./produce/run";
 import { baseOf } from "./project/source";
-import { layers, readMix, readStems, versions, writeMix } from "./project/stage";
-import type { IndexEntry } from "./project/store";
+import { activeVersion, layers, readMix, readStems, versions, writeMix } from "./project/stage";
+import { type IndexEntry, isSketchId } from "./project/store";
 import { tracksOf } from "./project/tracks";
 import { noteProject, sessionProject } from "./session";
 import type { Job, Started, Studio } from "./studio";
@@ -117,6 +117,87 @@ function fromEdits(base: Section[], edits: unknown[]): Draft[] | string {
   return drafts.filter((_each, at) => !removed.includes(at));
 }
 
+/** A sketch chosen through a tool: the project as it now is, the sketch's title and path, and what Arrange now works from. */
+type Chosen = { entry: IndexEntry; title: string; file: string; note: string };
+
+/**
+ * Marks a sketch as the chosen one, the way the panel's click does (the store's
+ * `choose`); the message when the sketch or the project's sketches say no.
+ */
+async function chooseSketch(
+  studio: Studio,
+  entry: IndexEntry,
+  sketch: unknown,
+): Promise<Chosen | string> {
+  const store = studio.store();
+  const have = await store.sketches(entry);
+  const exist =
+    have.length === 0 ? "it has no sketches" : `it has ${have.map((each) => each.id).join(", ")}`;
+  if (!isSketchId(sketch)) return `Pick sketch a, b or c; ${entry.title} (${entry.id}): ${exist}.`;
+  const record = have.find((each) => each.id === sketch);
+  if (record === undefined)
+    return `Sketch ${sketch} does not exist in ${entry.title} (${entry.id}); ${exist}.`;
+  await store.choose(entry, sketch);
+  const dir = store.pathOf(entry);
+  const version = await activeVersion(dir);
+  const letter = sketch.toUpperCase();
+  const note =
+    version !== null && entry.chosen !== sketch
+      ? `Arrange still works from Version ${version.n}, not Sketch ${letter}: a project that has a version always arranges from its picked (else newest) version, and the chosen sketch only counts until the first version exists.`
+      : "";
+  return {
+    entry: (await store.find(entry.id)) ?? entry,
+    title: record.title ?? `Sketch ${letter}`,
+    file: join(dir, record.file),
+    note,
+  };
+}
+
+/** The project a call names; when it also gives `sketch`, that sketch is chosen first (the project comes back as it now is). */
+async function projectAndSketch(
+  studio: Studio,
+  args: Record<string, unknown>,
+): Promise<{ entry: IndexEntry; note: string } | string> {
+  const entry = await projectOf(studio, args);
+  if (typeof entry === "string") return entry;
+  if (args["sketch"] === undefined) return { entry, note: "" };
+  return await chooseSketch(studio, entry, args["sketch"]);
+}
+
+export function chooseTool(studio: Studio): Tool {
+  return {
+    name: "music_choose",
+    description:
+      "Marks one of a project's sketches (a, b or c) as the chosen one, exactly as the panel's \"Mark as chosen\" does; Arrange, Stems and the later stages continue from it. Free, no confirm card. Returns the project, the chosen sketch's title and its file path; says plainly when the project already has a version, because Arrange then keeps working from that version.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "The project id; default the newest." },
+        sketch: {
+          type: "string",
+          enum: ["a", "b", "c"],
+          description: "Which sketch to continue with.",
+        },
+      },
+      required: ["sketch"],
+      additionalProperties: false,
+    },
+    call: async (args) => {
+      const entry = await projectOf(studio, args);
+      if (typeof entry === "string") return `Not done: ${entry}`;
+      const chosen = await chooseSketch(studio, entry, args["sketch"]);
+      if (typeof chosen === "string") return `Not done: ${chosen}`;
+      return [
+        `Chose sketch ${String(args["sketch"]).toUpperCase()} of "${chosen.entry.title}" (${chosen.entry.id}): ${chosen.title}.`,
+        `- ${chosen.file}`,
+        chosen.note,
+      ]
+        .filter((line) => line !== "")
+        .join("\n");
+    },
+  };
+}
+
 /** Edits to sections by index, or a whole new list; the drafts the render is built from. */
 async function draftsOf(
   studio: Studio,
@@ -134,11 +215,16 @@ export function arrangeTool(studio: Studio): Tool {
   return {
     name: "music_arrange",
     description:
-      "Edits the sections of a project's song (ElevenLabs sketches and versions only) and renders a new version: only changed sections are generated, kept ones are reused as audio. Give `edits` (by section index, starting at 0) or a full `sections` list (insert or delete by what you leave in or out; `from` names the old section a new one came from). It costs money, so the reader confirms on a card first; when they cancel, nothing is made and the tool says so. Returns the new version's file path.",
+      "Edits the sections of a project's song (ElevenLabs sketches and versions only) and renders a new version: only changed sections are generated, kept ones are reused as audio. Give `edits` (by section index, starting at 0) or a full `sections` list (insert or delete by what you leave in or out; `from` names the old section a new one came from). It costs money, so the reader confirms on a card first; when they cancel, nothing is made and the tool says so. Works from the project's current version, else its chosen sketch; give `sketch` (a, b or c) to choose that sketch first, as music_choose does (a project that already has a version keeps arranging from that version). Returns the new version's file path.",
     inputSchema: {
       type: "object",
       properties: {
         project: { type: "string", description: "The project id; default the newest." },
+        sketch: {
+          type: "string",
+          enum: ["a", "b", "c"],
+          description: "Choose this sketch first, then arrange from it.",
+        },
         edits: {
           type: "array",
           description: "Changes to existing sections.",
@@ -177,8 +263,9 @@ export function arrangeTool(studio: Studio): Tool {
       additionalProperties: false,
     },
     call: async (args, ctx) => {
-      const entry = await projectOf(studio, args);
-      if (typeof entry === "string") return `Not done: ${entry}`;
+      const found = await projectAndSketch(studio, args);
+      if (typeof found === "string") return `Not done: ${found}`;
+      const { entry, note } = found;
       const drafts = await draftsOf(studio, entry, args);
       if (typeof drafts === "string") return `Not done: ${drafts}`;
       const started = await startArrange(studio, entry.id, drafts, ctx.signal);
@@ -192,6 +279,7 @@ export function arrangeTool(studio: Studio): Tool {
       );
       const dir = studio.store().pathOf(entry);
       return [
+        note,
         `Made version ${made?.n ?? job.result} of "${entry.title}" (${entry.id}).`,
         made === undefined ? "" : `- ${join(dir, made.file)}`,
         made === undefined ? "" : `- ${join(dir, "versions", `${made.id}.json`)} (its sections)`,

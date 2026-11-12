@@ -37,7 +37,11 @@ export async function baseOf(store: Store, entry: IndexEntry): Promise<Base> {
     };
   const chosen = (await store.sketches(entry)).find((each) => each.id === entry.chosen);
   if (chosen === undefined)
-    return { ok: false, reason: "Choose a sketch on the Idea stage first." };
+    return {
+      ok: false,
+      reason:
+        "Choose a sketch first: call music_choose, pass `sketch` (a, b or c) to music_arrange, or mark one on the Idea stage.",
+    };
   if (chosen.engine !== "elevenlabs") return { ok: false, reason: LYRIA_REASON };
   const sections = parseSections(chosen.plan);
   if (sections === null || chosen.songId === null)

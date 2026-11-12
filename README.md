@@ -6,7 +6,7 @@ This is slice 1: the foundation and the Idea stage.
 
 - **Music Studio panel** (status bar button): the stage bar (Song, DJ, Video, Deliver), the Idea stage and the Library. Only Idea and the Library work; the other tabs are there, disabled, and say which later version brings them.
 - **Sketch 3 ideas** shows one confirm card with the estimated cost, then makes three sketches you can play and mark as chosen.
-- **Session tools**: `music_sketch` (paid, confirm card first) and `music_library` (read-only list with file paths).
+- **Session tools**: `music_sketch` (paid, confirm card first), `music_library` (read-only list with file paths) and `music_choose` (free: marks sketch a, b or c as chosen; `music_arrange` also takes a `sketch` argument that does the same first).
 
 ## Video stages
 
