@@ -33,6 +33,9 @@ export type Deps = {
   renderSize?: { width: number; height: number };
 };
 
+/** The ids of the manifest panel and session view that play files from the library folder. */
+const MEDIA_IDS = ["studio", "studio-view"];
+
 export const SETTINGS_HINT = "Add it in Settings → Extensions → Music Studio.";
 
 export type JobStatus = "running" | "done" | "failed" | "cancelled";
@@ -121,6 +124,31 @@ export class Studio {
 
   libraryPath(): string {
     return libraryFolder(this.api().settings?.["libraryFolder"]);
+  }
+
+  /** True once prifly serves the library folder at `media/…` for the panel and the view. */
+  streaming = false;
+
+  /**
+   * Has prifly serve the library folder (`api.panelMedia`, feature "panel-media")
+   * so the players stream real files; without it the files go as base64 JSON.
+   */
+  serveMedia(): void {
+    const api = this.api();
+    const call = (api as { panelMedia?: (panelId: string, folder: string) => void }).panelMedia;
+    if (!(api.features ?? []).includes("panel-media") || typeof call !== "function") return;
+    const folder = this.libraryPath();
+    const served = MEDIA_IDS.map((id) => {
+      try {
+        call.call(api, id, folder);
+        return true;
+      } catch (caught) {
+        // A prifly with panel media but no session views refuses the view's id; the panel still streams.
+        api.log("panel-media-failed", { id, error: String(caught) });
+        return false;
+      }
+    });
+    this.streaming = served[0] === true;
   }
 
   /** How long to wait between two polls of a Gemini call that is still running. */

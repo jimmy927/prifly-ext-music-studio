@@ -6,12 +6,16 @@
  * id, a shot id, a take id, a preview number). The older `sketch=<x>` query
  * still means kind sketch.
  *
+ * Where prifly serves the library folder (`studio.streaming`) and the page asks
+ * with `stream=1`, the answer is `{ mime, url }` instead: a `media/<path>` the
+ * player streams, with byte ranges, so a long file needs no base64 and no size limit.
+ *
  * Video goes as small proxies only: a take as the 360p copy video/proxy.ts
  * makes, the 540p preview as it is. The 1080p renders and the vertical cut are
  * never sent. Nothing over 12 MB is sent.
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { masters } from "../project/master";
 import { layers, mixes, readStems, versions } from "../project/stage";
@@ -102,6 +106,13 @@ export const media: Handler = async (studio, request) => {
   const id = query["id"] ?? query["sketch"] ?? "";
   const file = await fileOf(studio, dir, entry.id, kind, id);
   if (file === null) throw new Error(`No such ${kind}.`);
+  if (query["stream"] === "1" && studio.streaming) {
+    // A missing file is said here, not left to a player that fails without a word.
+    await stat(join(dir, file));
+    // Over a relative path prifly serves from the library folder; each segment encoded.
+    const path = [entry.dir, ...file.split(/[\\/]/)].map(encodeURIComponent).join("/");
+    return { mime: mimeOf(file), url: `media/${path}` };
+  }
   const bytes = await readFile(join(dir, file));
   if (bytes.length > MAX_MEDIA_BYTES)
     throw new Error(

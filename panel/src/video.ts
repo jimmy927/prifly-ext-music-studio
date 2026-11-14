@@ -1,6 +1,6 @@
 /**
  * What the four Video stages' pages share: the budget line, pictures and clips
- * fetched from `api/media` as base64 and shown from Blob URLs, the one-line
+ * fetched from `api/media` (streamed where prifly serves the folder, else base64 in Blob URLs), the one-line
  * reasons a stage is blocked, and picking up a run that was started before
  * the page was reopened.
  */
@@ -9,7 +9,7 @@ import { money } from "../../video/constants";
 import { call, errorText, type Job, type JobsView, type MoneyView } from "./api";
 import { h } from "./dom";
 import { followLocal, localBusy } from "./local";
-import { blobUrl, fetchMedia, type Kind } from "./player";
+import { fetchMedia, type Kind, mediaSrc } from "./player";
 import { app } from "./state";
 import { busy, follow } from "./work";
 
@@ -55,7 +55,7 @@ export async function mediaUrl(
   let pending = loading.get(cacheKey);
   if (pending === undefined) {
     pending = fetchMedia(project, kind, id).then((media) => {
-      const url = blobUrl(media.base64, media.mime);
+      const url = mediaSrc(media);
       urls.set(cacheKey, url);
       return url;
     });

@@ -76,6 +76,7 @@ test("activate registers the tools and the panel module answers its routes", asy
   });
   const stop = activate(fake.api);
   expect(fake.tools().map((tool) => tool.name)).toEqual([
+    "music_open",
     "music_sketch",
     "music_library",
     "music_choose",

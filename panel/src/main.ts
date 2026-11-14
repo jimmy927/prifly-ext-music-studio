@@ -4,6 +4,7 @@
  * `prifly-look` message and overrides the tokens in style.css.
  */
 
+import { inSessionView, panelSession } from "./api";
 import { mountArrange } from "./arrange";
 import { mountDeliver } from "./deliver";
 import { fill, h } from "./dom";
@@ -16,6 +17,7 @@ import { mountMaster } from "./master";
 import { mountMix } from "./mix";
 import { mountPrepare } from "./prepare";
 import { mountProduce } from "./produce";
+import { openSessionView } from "./session-view";
 import { mountShoot } from "./shoot";
 import { app, onRedraw, STAGES } from "./state";
 import { mountStoryboard } from "./storyboard";
@@ -51,7 +53,10 @@ addEventListener("message", (event: MessageEvent) => {
   }
 });
 
-startFollowing();
+// In a session view the project it was shown with opens first, then the page follows the session.
+const viewing = inSessionView();
+startFollowing(viewing ? openSessionView : undefined);
+if (viewing && panelSession() === null) void openSessionView();
 const docked = app.follow.session !== null;
 const followSlot = h("div", { class: "follow-slot" });
 const followNote = h("div", { class: "follow-note-slot" });

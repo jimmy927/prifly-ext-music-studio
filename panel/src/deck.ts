@@ -1,7 +1,7 @@
 /** One audio file of a project, loaded from `api/media` on first use, for the A/B switch and the Prepare transport. */
 
 import { errorText } from "./api";
-import { blobUrl, claimPlayback, fetchMedia, type Kind } from "./player";
+import { claimPlayback, fetchMedia, type Kind, mediaSrc } from "./player";
 
 export class Deck {
   readonly audio = new Audio();
@@ -22,7 +22,7 @@ export class Deck {
     this.loading ??= (async () => {
       try {
         const media = await fetchMedia(this.project, this.kind, this.id);
-        this.audio.src = blobUrl(media.base64, media.mime);
+        this.audio.src = mediaSrc(media);
         this.error = null;
       } catch (caught) {
         this.error = errorText(caught);

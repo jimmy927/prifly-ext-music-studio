@@ -4,6 +4,7 @@ import type { ListItem, ProjectView } from "../../panel-router";
 import type { CrateItem } from "../../routes/crates";
 import type { FollowView } from "../../session";
 import type { Job, Status } from "../../studio";
+import type { ViewAnswer } from "../../view";
 
 export type {
   CastView,
@@ -37,7 +38,7 @@ export type {
   StartAnswer,
   VersionItem,
 } from "../../routes/views";
-export type { CrateItem, FollowView, Job, ListItem, ProjectView, Status };
+export type { CrateItem, FollowView, Job, ListItem, ProjectView, Status, ViewAnswer };
 
 export type SketchAnswer =
   | { ok: true; job: Job }
@@ -47,10 +48,27 @@ export type SketchAnswer =
       message: string;
     };
 
-/** The session this window is docked beside (`session=` in its address), or null on its own. */
+const VIEW_PATH = /\/extension-view\/[^/]+\/[^/]+\/([^/]+)\//;
+
+/** The address's path, empty where there is none. */
+const pathOf = (): string => (typeof location.pathname === "string" ? location.pathname : "");
+
+/** True in the session view (the App tab beside a chat), whose address is /extension-view/<extension>/<view>/<session>/. */
+export function inSessionView(): boolean {
+  return VIEW_PATH.test(pathOf());
+}
+
+/** The session this window is docked beside (`session=` in its address, or the session view's), or null on its own. */
 export function panelSession(): string | null {
   const id = new URLSearchParams(location.search).get("session");
-  return id === null || id === "" ? null : id;
+  if (id !== null && id !== "") return id;
+  const viewed = VIEW_PATH.exec(pathOf())?.[1];
+  if (viewed === undefined) return null;
+  try {
+    return decodeURIComponent(viewed);
+  } catch {
+    return viewed;
+  }
 }
 
 /** `path` with the window's session in its query, so a paid button's card is asked over that session. */

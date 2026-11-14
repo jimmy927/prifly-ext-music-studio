@@ -2,7 +2,8 @@
  * Which Music Studio project a prifly session is working on. A session is
  * linked to a project when one of its tools made or used it (the link is kept
  * in `api.state`, with the tool called last), or when its folder is inside the
- * project's folder. The panel docked beside the session asks `follow` which
+ * project's folder. The first tool a session calls also shows the Music Studio
+ * view beside its chat (view.ts). The panel docked beside the session asks `follow` which
  * project that is and which stage the last tool belongs to.
  */
 
@@ -11,19 +12,23 @@ import { isAbsolute, relative } from "node:path";
 import type { ExtensionApi, ExtensionSession, ExtensionTool } from "@prifly/extension-api";
 import type { IndexEntry } from "./project/store";
 import type { Studio } from "./studio";
+import { autoOpen } from "./view";
 
-export type StageId =
-  | "idea"
-  | "arrange"
-  | "produce"
-  | "mix"
-  | "master"
-  | "prepare"
-  | "treatment"
-  | "storyboard"
-  | "shoot"
-  | "edit"
-  | "deliver";
+export const STAGE_IDS = [
+  "idea",
+  "arrange",
+  "produce",
+  "mix",
+  "master",
+  "prepare",
+  "treatment",
+  "storyboard",
+  "shoot",
+  "edit",
+  "deliver",
+] as const;
+
+export type StageId = (typeof STAGE_IDS)[number];
 
 /** The stage of the panel a tool's work belongs to. */
 export const STAGE_OF_TOOL: Readonly<Record<string, StageId>> = {
@@ -83,6 +88,7 @@ export async function noteProject(studio: Studio, project: string): Promise<void
   if (call === undefined) return;
   try {
     await linkSession(studio, call.session, project, call.tool);
+    await autoOpen(studio, call.session, project, call.tool);
   } catch (caught) {
     studio.api().log("session-link-failed", { error: String(caught) });
   }

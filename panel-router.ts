@@ -24,6 +24,7 @@ import { treatmentRoutes } from "./routes/treatment";
 import { tempoOf } from "./routes/video-common";
 import { followRoute } from "./session";
 import { type Studio, startSketch, statusOf } from "./studio";
+import { type ViewRequest, viewRoute } from "./view";
 
 /** The routes of the stages after Idea, one file each; a later stage adds its own here. */
 const STAGE_ROUTES: Record<string, Handler> = {
@@ -68,20 +69,24 @@ async function sketch(studio: Studio, request: PanelRequest) {
 }
 
 /**
- * The module's `panel` export for the Music Studio window. Every request may
+ * The module's `panel` export for the Music Studio window and its session view
+ * (`api/view` tells the view which project and stage it was shown with). Every request may
  * carry `session`, the session the window is docked beside: the cards a paid
  * button raises are asked over it (see confirm.ts).
  */
-export async function route(studio: Studio, request: PanelRequest): Promise<unknown> {
-  const session = request.query["session"] ?? "";
+export async function route(studio: Studio, request: ViewRequest): Promise<unknown> {
+  // A session view has its session from the host; the docked panel names it in the query.
+  const session = request.query["session"] ?? request.sessionId ?? "";
   return await panelRequest.run({ session: session === "" ? null : session }, () =>
     answer(studio, request),
   );
 }
 
-async function answer(studio: Studio, request: PanelRequest): Promise<unknown> {
+async function answer(studio: Studio, request: ViewRequest): Promise<unknown> {
   const { path, query } = request;
   switch (path) {
+    case "view":
+      return await viewRoute(studio, request);
     case "follow":
       return await followRoute(studio, query["session"] ?? "");
     case "status":

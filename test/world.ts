@@ -129,6 +129,9 @@ export function world(
     confirmNeedsSession?: boolean;
     /** What the reader answers `api.dialog`; null is a cancel; left out, it answers as `confirm` does. */
     dialog?: string | null;
+    /** Offer prifly's session views and panel media. */
+    views?: boolean;
+    media?: boolean;
   } = {},
 ): World {
   const folder = mkdtempSync(join(tmpdir(), "music-studio-library-"));
@@ -145,6 +148,8 @@ export function world(
       ? {}
       : { confirmNeedsSession: options.confirmNeedsSession }),
     ...(options.dialog === undefined ? {} : { dialog: options.dialog }),
+    ...(options.views === undefined ? {} : { views: options.views }),
+    ...(options.media === undefined ? {} : { media: options.media }),
   });
   const calls: Call[] = [];
   const fetchFn: Fetch = async (input, init) => {

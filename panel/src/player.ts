@@ -1,7 +1,7 @@
 /**
- * A player for one audio file of a project. The host serves no audio files, so
- * the audio comes from `api/media` as base64 in JSON, becomes a Blob and plays
- * from its URL.
+ * A player for one audio file of a project. The audio comes from `api/media`:
+ * a `media/…` url prifly streams where it serves the library folder, else
+ * base64 in JSON that becomes a Blob and plays from its URL.
  */
 
 import { call, errorText } from "./api";
@@ -29,15 +29,30 @@ export type Kind =
   | "take"
   | "preview";
 
-/** The file's bytes and type from the extension. */
-export async function fetchMedia(
-  project: string,
-  kind: Kind,
-  id: string,
-): Promise<{ mime: string; base64: string }> {
-  return await call<{ mime: string; base64: string }>(
-    `media?project=${encodeURIComponent(project)}&kind=${kind}&id=${encodeURIComponent(id)}`,
+/** What `api/media` answers: a `url` to stream where prifly serves the library folder, else the bytes as `base64`. */
+export type MediaAnswer = { mime: string; url?: string; base64?: string };
+
+/** The file's type and where to get it from the extension. */
+export async function fetchMedia(project: string, kind: Kind, id: string): Promise<MediaAnswer> {
+  return await call<MediaAnswer>(
+    `media?project=${encodeURIComponent(project)}&kind=${kind}&id=${encodeURIComponent(id)}&stream=1`,
   );
+}
+
+/** What an `<audio>`, `<video>` or `<img>` takes as `src`: the streaming url, else a Blob URL. */
+export function mediaSrc(media: MediaAnswer): string {
+  if (media.url !== undefined) return media.url;
+  return blobUrl(media.base64 ?? "", media.mime);
+}
+
+/** The file's bytes, for decoding. */
+export async function mediaBytes(media: MediaAnswer): Promise<ArrayBuffer> {
+  if (media.url !== undefined) {
+    const response = await fetch(media.url);
+    if (!response.ok) throw new Error(`The file could not be loaded (${response.status}).`);
+    return await response.arrayBuffer();
+  }
+  return Uint8Array.from(atob(media.base64 ?? ""), (char) => char.charCodeAt(0)).buffer;
 }
 
 /** A play button, a seek bar and the time, for one file. `label` names it for assistive tech. */
@@ -86,7 +101,7 @@ export function player(
       note.textContent = "Loading…";
       try {
         const media = await fetchMedia(project, kind, id);
-        audio.src = blobUrl(media.base64, media.mime);
+        audio.src = mediaSrc(media);
         loaded = true;
         note.textContent = "";
       } catch (caught) {

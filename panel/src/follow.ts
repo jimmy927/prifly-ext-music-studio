@@ -29,12 +29,15 @@ export function noteFor(view: FollowView | null, error: string | null): string {
 }
 
 let busy = false;
+/** False until the session view has opened the project it was shown with; polling waits for that. */
+let started = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
 /** Opens a project the way the Library does, then shows `stage` when that stage is on, else Idea. */
-async function openProject(id: string, stage: View | null): Promise<void> {
+export async function openProject(id: string, stage: View | null): Promise<void> {
   const project = await call<ProjectView>(`project?id=${encodeURIComponent(id)}`);
   app.project = project;
+  app.opening = null;
   if (project.brief !== null) app.draft = { ...project.brief };
   app.job = null;
   app.notice = null;
@@ -66,7 +69,7 @@ async function apply(view: FollowView): Promise<void> {
 export async function pollFollow(): Promise<void> {
   const follow = app.follow;
   const session = follow.session;
-  if (session === null || busy) return;
+  if (session === null || busy || !started) return;
   busy = true;
   try {
     follow.view = await call<FollowView>("follow");
@@ -88,15 +91,25 @@ function schedule(): void {
   }, POLL_MS);
 }
 
-/** Starts following if the window was opened with `session=`; does nothing on its own. */
-export function startFollowing(): void {
+/**
+ * Starts following if the window was opened with `session=`; does nothing on its own.
+ * `before` runs first (the session view opens its project there), so the poll
+ * does not open another project or stage under it.
+ */
+export function startFollowing(before?: () => Promise<void>): void {
   const session = panelSession();
   if (session === null) return;
   app.follow = { session, on: true, view: null, error: null, stamp: 0, project: null };
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && app.follow.on) void pollFollow();
   });
-  void pollFollow();
+  const first = before?.() ?? Promise.resolve();
+  void first
+    .catch(() => undefined)
+    .finally(() => {
+      started = true;
+      void pollFollow();
+    });
   schedule();
 }
 
@@ -148,6 +161,21 @@ export function renderFollow(): Child {
 export function renderFollowNote(): Child {
   const follow = app.follow;
   if (follow.session === null) return null;
+  const opening = app.opening;
+  if (opening !== null) {
+    return h(
+      "p",
+      { class: "follow-note", "data-part": "follow-note", role: "status" },
+      opening.text,
+      opening.state === "loading"
+        ? null
+        : h(
+            "button",
+            { type: "button", class: "btn small", onclick: () => go("library") },
+            "Open the Library",
+          ),
+    );
+  }
   return h(
     "p",
     { class: "follow-note", "data-part": "follow-note", role: "status" },

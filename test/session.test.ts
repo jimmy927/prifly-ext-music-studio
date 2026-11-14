@@ -146,11 +146,13 @@ test("a link that cannot be saved does not fail the tool", async () => {
   expect(w.fake.logs.some((each) => each.event === "session-link-failed")).toBe(true);
 });
 
-test("every tool that works on a project has a stage; the library has none", () => {
+test("every tool that works on a project has a stage; the library and music_open have none", () => {
   const projectTools = w0()
     .fake.tools()
     .map((each) => each.name);
-  for (const name of projectTools.filter((each) => each !== "music_library"))
+  for (const name of projectTools.filter(
+    (each) => each !== "music_library" && each !== "music_open",
+  ))
     expect(stageOfTool(name)).not.toBeNull();
   expect(stageOfTool("music_library")).toBeNull();
   expect(stageOfTool(null)).toBeNull();

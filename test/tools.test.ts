@@ -6,6 +6,7 @@ import { BRIEF, happy, world } from "./world";
 test("both tools are registered under their names", () => {
   const w = world(happy);
   expect(w.fake.tools().map((tool) => tool.name)).toEqual([
+    "music_open",
     "music_sketch",
     "music_library",
     "music_choose",

@@ -15,7 +15,17 @@
       "icon": "zap",
       "description": "Sketch song ideas and keep them in a library",
       "folder": "panel",
-      "page": "index.html"
+      "page": "index.html",
+      "media": true
+    }
+  ],
+  "sessionViews": [
+    {
+      "id": "studio-view",
+      "label": "Music Studio",
+      "folder": "panel",
+      "page": "index.html",
+      "media": true
     }
   ],
   "settings": [

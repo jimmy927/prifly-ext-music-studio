@@ -2,6 +2,7 @@
 
 import type { ExtensionTool } from "@prifly/extension-api";
 import { deliverTool, masterTool, prepareTool } from "./dj-tools";
+import { openTool } from "./open-tool";
 import { inSession } from "./session";
 import { arrangeTool, chooseTool, mixTool, sfxTool, stemsTool } from "./stage-tools";
 import type { Studio } from "./studio";
@@ -11,6 +12,7 @@ import { editTool, renderTool, shootTool } from "./video-tools-make";
 
 export function allTools(studio: Studio): ExtensionTool[] {
   return inSession([
+    openTool(studio),
     sketchTool(studio),
     libraryTool(studio),
     chooseTool(studio),

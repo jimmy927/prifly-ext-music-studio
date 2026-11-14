@@ -239,6 +239,10 @@ export type FakeApi = {
   dialogs: DialogSpec[];
   /** The sessions `api.session` knows, by id. */
   knownSessions: Map<string, { title: string; cwd: string }>;
+  /** Every `api.showSessionView` call, where the fake offers session views. */
+  viewShown: { sessionId: string; viewId: string; params: Record<string, string> }[];
+  /** Every `api.panelMedia` call, where the fake offers panel media. */
+  mediaFolders: { panelId: string; folder: string }[];
 };
 
 /**
@@ -260,6 +264,10 @@ export function fakeApi(
     dialog?: string | null;
     /** What the reader answers every `api.askSnooze` card; default: a no. */
     askSnooze?: AskSnoozeAnswer;
+    /** Offer "session-views": `showSessionView` is recorded in `viewShown`. */
+    views?: boolean;
+    /** Offer "panel-media": `panelMedia` is recorded in `mediaFolders`. */
+    media?: boolean;
   } = {},
 ): FakeApi {
   let tools: ExtensionTool[] = [];
@@ -280,6 +288,8 @@ export function fakeApi(
     documents,
     dialogs: [],
     knownSessions: new Map(),
+    viewShown: [],
+    mediaFolders: [],
   };
   const api: ExtensionApi = {
     features: [
@@ -294,6 +304,8 @@ export function fakeApi(
       "status",
       "secrets",
       "setting-secret",
+      ...(options.views === true ? ["session-views"] : []),
+      ...(options.media === true ? ["panel-media"] : []),
     ],
     secrets: {
       get: async (key) => secrets.get(key) ?? null,
@@ -356,6 +368,15 @@ export function fakeApi(
       return (options.confirm ?? true) ? "" : null;
     }) as ExtensionApi["dialog"],
   };
+  if (options.views === true) {
+    Object.assign(api, {
+      showSessionView: (sessionId: string, viewId: string, params: Record<string, string>) =>
+        void fake.viewShown.push({ sessionId, viewId, params }),
+    });
+  }
+  if (options.media === true) {
+    api.panelMedia = (panelId, folder) => void fake.mediaFolders.push({ panelId, folder });
+  }
   const callTool: FakeApi["callTool"] = async (name, args, pick = null) => {
     const tool = tools.find((each) => each.name === name);
     if (tool === undefined) throw new Error(`No tool ${name} registered`);

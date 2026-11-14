@@ -54,6 +54,8 @@ export type App = {
     crate: string;
     crates: CrateItem[];
   };
+  /** The session view opening the project it was shown with: loading, or why it could not. */
+  opening: { state: "loading" | "missing" | "error"; text: string } | null;
   /** Following the session the window is docked beside; `session` is null when it is not docked. */
   follow: {
     session: string | null;
@@ -77,6 +79,7 @@ export const app: App = {
   notice: null,
   refusal: null,
   library: { projects: null, query: "", error: null, crate: "", crates: [] },
+  opening: null,
   follow: { session: null, on: false, view: null, error: null, stamp: 0, project: null },
 };
 

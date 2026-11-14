@@ -8,7 +8,7 @@
 import { barStartMs } from "../../audio/bars";
 import { audible, gainOf, type TrackMix } from "../../audio/mixgraph";
 import type { MixTrack } from "./api";
-import { fetchMedia } from "./player";
+import { fetchMedia, mediaBytes } from "./player";
 
 type Voice = {
   key: string;
@@ -28,8 +28,7 @@ async function decode(
     track.kind === "stem" ? "stem" : "layer",
     track.key.slice(track.key.indexOf(":") + 1),
   );
-  const bytes = Uint8Array.from(atob(media.base64), (char) => char.charCodeAt(0));
-  return await context.decodeAudioData(bytes.buffer);
+  return await context.decodeAudioData(await mediaBytes(media));
 }
 
 export class Preview {

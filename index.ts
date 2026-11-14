@@ -5,10 +5,11 @@
  * extension's own sealed secrets, never in prifly's vault.
  */
 
-import type { ExtensionApi, PanelRequest } from "@prifly/extension-api";
+import type { ExtensionApi } from "@prifly/extension-api";
 import { allTools } from "./all-tools";
 import { route } from "./panel-router";
 import { Studio } from "./studio";
+import type { ViewRequest } from "./view";
 
 let api: ExtensionApi | null = null;
 
@@ -32,13 +33,20 @@ export function activate(given: ExtensionApi): () => void {
   const refresh = () => void statusLine(given).then((text) => given.status?.(text));
   refresh();
   given.tools?.register(allTools(studio));
-  given.onSettings?.(refresh);
+  studio.serveMedia();
+  given.onSettings?.(() => {
+    refresh();
+    // The library folder may have changed.
+    studio.serveMedia();
+  });
   given.log("activated");
   return () => {
+    studio.streaming = false;
     api = null;
   };
 }
 
-export function panel(_panelId: string, request: PanelRequest): Promise<unknown> {
+/** The Music Studio window and its session view answer alike: `request.params` says what the view was shown with. */
+export function panel(_panelId: string, request: ViewRequest): Promise<unknown> {
   return route(studio, request);
 }

@@ -1,3 +1,42 @@
+// panel/src/api.ts
+var VIEW_PATH = /\/extension-view\/[^/]+\/[^/]+\/([^/]+)\//;
+var pathOf = () => typeof location.pathname === "string" ? location.pathname : "";
+function inSessionView() {
+  return VIEW_PATH.test(pathOf());
+}
+function panelSession() {
+  const id = new URLSearchParams(location.search).get("session");
+  if (id !== null && id !== "")
+    return id;
+  const viewed = VIEW_PATH.exec(pathOf())?.[1];
+  if (viewed === undefined)
+    return null;
+  try {
+    return decodeURIComponent(viewed);
+  } catch {
+    return viewed;
+  }
+}
+function withSession(path) {
+  const session = panelSession();
+  if (session === null)
+    return path;
+  return `${path}${path.includes("?") ? "&" : "?"}session=${encodeURIComponent(session)}`;
+}
+async function call(path, body) {
+  const response = await fetch(`api/${withSession(path)}`, {
+    method: body === undefined ? "GET" : "POST",
+    ...body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const error = typeof data === "object" && data !== null ? data.error : null;
+    throw new Error(typeof error === "string" ? error : `The request failed (${response.status}).`);
+  }
+  return data;
+}
+var errorText = (caught) => caught instanceof Error ? caught.message : String(caught);
+
 // arrange/plan.ts
 var MIN_CHUNK_MS = 3000;
 var MAX_CHUNK_MS = 120000;
@@ -143,31 +182,6 @@ var barMs = (tempo) => BEATS_PER_BAR * 60000 / tempo;
 var barStartMs = (bar, tempo) => Math.max(0, Math.round((bar - 1) * barMs(tempo)));
 var barsIn = (ms, tempo) => Math.round(ms / barMs(tempo) * 10) / 10;
 
-// panel/src/api.ts
-function panelSession() {
-  const id = new URLSearchParams(location.search).get("session");
-  return id === null || id === "" ? null : id;
-}
-function withSession(path) {
-  const session = panelSession();
-  if (session === null)
-    return path;
-  return `${path}${path.includes("?") ? "&" : "?"}session=${encodeURIComponent(session)}`;
-}
-async function call(path, body) {
-  const response = await fetch(`api/${withSession(path)}`, {
-    method: body === undefined ? "GET" : "POST",
-    ...body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    const error = typeof data === "object" && data !== null ? data.error : null;
-    throw new Error(typeof error === "string" ? error : `The request failed (${response.status}).`);
-  }
-  return data;
-}
-var errorText = (caught) => caught instanceof Error ? caught.message : String(caught);
-
 // panel/src/dom.ts
 function h(tag, attrs, ...children) {
   const node = document.createElement(tag);
@@ -218,7 +232,21 @@ function blobUrl(base64, mime) {
   return URL.createObjectURL(new Blob([bytes], { type: mime }));
 }
 async function fetchMedia(project, kind, id) {
-  return await call(`media?project=${encodeURIComponent(project)}&kind=${kind}&id=${encodeURIComponent(id)}`);
+  return await call(`media?project=${encodeURIComponent(project)}&kind=${kind}&id=${encodeURIComponent(id)}&stream=1`);
+}
+function mediaSrc(media) {
+  if (media.url !== undefined)
+    return media.url;
+  return blobUrl(media.base64 ?? "", media.mime);
+}
+async function mediaBytes(media) {
+  if (media.url !== undefined) {
+    const response = await fetch(media.url);
+    if (!response.ok)
+      throw new Error(`The file could not be loaded (${response.status}).`);
+    return await response.arrayBuffer();
+  }
+  return Uint8Array.from(atob(media.base64 ?? ""), (char) => char.charCodeAt(0)).buffer;
 }
 function player(project, id, kind = "sketch", label = "") {
   const audio = new Audio;
@@ -255,7 +283,7 @@ function player(project, id, kind = "sketch", label = "") {
       note.textContent = "Loading…";
       try {
         const media = await fetchMedia(project, kind, id);
-        audio.src = blobUrl(media.base64, media.mime);
+        audio.src = mediaSrc(media);
         loaded = true;
         note.textContent = "";
       } catch (caught) {
@@ -399,6 +427,7 @@ var app = {
   notice: null,
   refusal: null,
   library: { projects: null, query: "", error: null, crate: "", crates: [] },
+  opening: null,
   follow: { session: null, on: false, view: null, error: null, stamp: 0, project: null }
 };
 var listeners = new Set;
@@ -1243,7 +1272,7 @@ async function mediaUrl(project, kind, id, key) {
   let pending = loading.get(cacheKey);
   if (pending === undefined) {
     pending = fetchMedia(project, kind, id).then((media) => {
-      const url = blobUrl(media.base64, media.mime);
+      const url = mediaSrc(media);
       urls.set(cacheKey, url);
       return url;
     });
@@ -1548,10 +1577,12 @@ function noteFor(view, error) {
   return "";
 }
 var busy2 = false;
+var started = false;
 var timer;
 async function openProject(id, stage) {
   const project = await call(`project?id=${encodeURIComponent(id)}`);
   app.project = project;
+  app.opening = null;
   if (project.brief !== null)
     app.draft = { ...project.brief };
   app.job = null;
@@ -1579,7 +1610,7 @@ async function apply(view) {
 async function pollFollow() {
   const follow = app.follow;
   const session = follow.session;
-  if (session === null || busy2)
+  if (session === null || busy2 || !started)
     return;
   busy2 = true;
   try {
@@ -1602,7 +1633,7 @@ function schedule() {
     schedule();
   }, POLL_MS3);
 }
-function startFollowing() {
+function startFollowing(before) {
   const session = panelSession();
   if (session === null)
     return;
@@ -1611,7 +1642,13 @@ function startFollowing() {
     if (document.visibilityState === "visible" && app.follow.on)
       pollFollow();
   });
-  pollFollow();
+  const first = before?.() ?? Promise.resolve();
+  first.catch(() => {
+    return;
+  }).finally(() => {
+    started = true;
+    pollFollow();
+  });
   schedule();
 }
 function toggle() {
@@ -1647,6 +1684,10 @@ function renderFollowNote() {
   const follow = app.follow;
   if (follow.session === null)
     return null;
+  const opening = app.opening;
+  if (opening !== null) {
+    return h("p", { class: "follow-note", "data-part": "follow-note", role: "status" }, opening.text, opening.state === "loading" ? null : h("button", { type: "button", class: "btn small", onclick: () => go("library") }, "Open the Library"));
+  }
   return h("p", { class: "follow-note", "data-part": "follow-note", role: "status" }, follow.on ? noteFor(follow.view, follow.error) : "");
 }
 
@@ -2176,7 +2217,7 @@ class Deck {
     this.loading ??= (async () => {
       try {
         const media = await fetchMedia(this.project, this.kind, this.id);
-        this.audio.src = blobUrl(media.base64, media.mime);
+        this.audio.src = mediaSrc(media);
         this.error = null;
       } catch (caught) {
         this.error = errorText(caught);
@@ -2514,8 +2555,7 @@ var gainOf = (db) => 10 ** (db / 20);
 // panel/src/preview.ts
 async function decode(context, project, track) {
   const media = await fetchMedia(project, track.kind === "stem" ? "stem" : "layer", track.key.slice(track.key.indexOf(":") + 1));
-  const bytes = Uint8Array.from(atob(media.base64), (char) => char.charCodeAt(0));
-  return await context.decodeAudioData(bytes.buffer);
+  return await context.decodeAudioData(await mediaBytes(media));
 }
 
 class Preview {
@@ -3462,6 +3502,29 @@ function mountProduce() {
   };
 }
 
+// panel/src/session-view.ts
+var LOADING_TEXT = "Opening the project…";
+var MISSING_TEXT = "This project is not in the library any more.";
+async function openSessionView() {
+  app.opening = { state: "loading", text: LOADING_TEXT };
+  redraw("head");
+  try {
+    const answer = await call("view");
+    if (answer.state === "none") {
+      app.opening = null;
+    } else if (answer.state === "missing") {
+      app.opening = { state: "missing", text: MISSING_TEXT };
+    } else {
+      await openProject(answer.project, answer.stage);
+      app.follow.project = answer.project;
+      app.follow.stamp = answer.stamp;
+    }
+  } catch (caught) {
+    app.opening = { state: "error", text: `Could not open the project: ${errorText(caught)}` };
+  }
+  redraw("head");
+}
+
 // panel/src/shoot.ts
 var view7 = null;
 var loadError7 = null;
@@ -4171,7 +4234,10 @@ addEventListener("message", (event) => {
       document.documentElement.style.setProperty(ours, value);
   }
 });
-startFollowing();
+var viewing = inSessionView();
+startFollowing(viewing ? openSessionView : undefined);
+if (viewing && panelSession() === null)
+  openSessionView();
 var docked = app.follow.session !== null;
 var followSlot = h("div", { class: "follow-slot" });
 var followNote = h("div", { class: "follow-note-slot" });
