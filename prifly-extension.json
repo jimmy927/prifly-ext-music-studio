@@ -10,13 +10,20 @@
   },
   "panels": [
     {
+      "id": "open",
+      "label": "Music Studio",
+      "icon": "zap",
+      "description": "Go to your Music Studio session, or start one: the studio opens beside its chat",
+      "folder": "panel",
+      "page": "open.html"
+    }
+  ],
+  "launch": [
+    {
       "id": "studio",
       "label": "Music Studio",
       "icon": "zap",
-      "description": "Sketch song ideas and keep them in a library",
-      "folder": "panel",
-      "page": "index.html",
-      "media": true
+      "description": "A session with the Music Studio beside the chat"
     }
   ],
   "sessionViews": [

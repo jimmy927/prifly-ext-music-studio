@@ -5,9 +5,6 @@ function inSessionView() {
   return VIEW_PATH.test(pathOf());
 }
 function panelSession() {
-  const id = new URLSearchParams(location.search).get("session");
-  if (id !== null && id !== "")
-    return id;
   const viewed = VIEW_PATH.exec(pathOf())?.[1];
   if (viewed === undefined)
     return null;
@@ -3512,6 +3509,7 @@ async function openSessionView() {
     const answer = await call("view");
     if (answer.state === "none") {
       app.opening = null;
+      go("library");
     } else if (answer.state === "missing") {
       app.opening = { state: "missing", text: MISSING_TEXT };
     } else {

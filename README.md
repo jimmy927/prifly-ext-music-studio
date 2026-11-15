@@ -4,7 +4,7 @@ Take a song idea to three 30-second sketches with ElevenLabs Music v2.5 or Lyria
 
 This is slice 1: the foundation and the Idea stage.
 
-- **Music Studio panel** (status bar button): the stage bar (Song, DJ, Video, Deliver), the Idea stage and the Library. Only Idea and the Library work; the other tabs are there, disabled, and say which later version brings them.
+- **Music Studio session** (status bar button): clicking it goes to your Music Studio session, or starts one, and shows the studio in its App tab beside the chat (Library first, or the last project; needs a prifly with session views, else the tools still work). The studio has the stage bar (Song, DJ, Video, Deliver), the Idea stage and the Library. Only Idea and the Library work; the other tabs are there, disabled, and say which later version brings them.
 - **Sketch 3 ideas** shows one confirm card with the estimated cost, then makes three sketches you can play and mark as chosen.
 - **Session tools**: `music_sketch` (paid, confirm card first), `music_library` (read-only list with file paths) and `music_choose` (free: marks sketch a, b or c as chosen; `music_arrange` also takes a `sketch` argument that does the same first).
 

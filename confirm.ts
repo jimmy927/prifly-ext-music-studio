@@ -11,7 +11,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { ConfirmSpec, ExtensionApi } from "@prifly/extension-api";
 import { sessionOf } from "./session";
 
-/** The panel request being answered: the session its window is docked beside, or null. */
+/** The panel request being answered: the session its view is shown in, or null. */
 export const panelRequest = new AsyncLocalStorage<{ session: string | null }>();
 
 /** The button word of the dialog a panel without a session asks with. */

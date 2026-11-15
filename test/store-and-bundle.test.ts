@@ -108,3 +108,8 @@ test("the committed panel/app.js is the bundle of the current sources", async ()
   const committed = readFileSync(join(import.meta.dir, "..", "panel", "app.js"), "utf8");
   expect(committed).toBe(await bundle());
 });
+
+test("the committed panel/opener.js is the bundle of the current sources", async () => {
+  const committed = readFileSync(join(import.meta.dir, "..", "panel", "opener.js"), "utf8");
+  expect(committed).toBe(await bundle("panel/src/opener.ts"));
+});

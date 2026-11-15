@@ -238,7 +238,7 @@ export type FakeApi = {
   /** Every dialog `api.dialog` was asked to show. */
   dialogs: DialogSpec[];
   /** The sessions `api.session` knows, by id. */
-  knownSessions: Map<string, { title: string; cwd: string }>;
+  knownSessions: Map<string, { title: string; cwd: string; archived?: boolean }>;
   /** Every `api.showSessionView` call, where the fake offers session views. */
   viewShown: { sessionId: string; viewId: string; params: Record<string, string> }[];
   /** Every `api.panelMedia` call, where the fake offers panel media. */
@@ -268,6 +268,8 @@ export function fakeApi(
     views?: boolean;
     /** Offer "panel-media": `panelMedia` is recorded in `mediaFolders`. */
     media?: boolean;
+    /** Offer "panel-open-session": a panel page may open a session. */
+    openSession?: boolean;
   } = {},
 ): FakeApi {
   let tools: ExtensionTool[] = [];
@@ -306,6 +308,7 @@ export function fakeApi(
       "setting-secret",
       ...(options.views === true ? ["session-views"] : []),
       ...(options.media === true ? ["panel-media"] : []),
+      ...(options.openSession === true ? ["panel-open-session"] : []),
     ],
     secrets: {
       get: async (key) => secrets.get(key) ?? null,
@@ -346,7 +349,15 @@ export function fakeApi(
     sessions: () => [],
     session: (id) => {
       const known = fake.knownSessions.get(id);
-      return known === undefined ? null : { id, title: known.title, cwd: known.cwd, state: "idle" };
+      return known === undefined
+        ? null
+        : {
+            id,
+            title: known.title,
+            cwd: known.cwd,
+            state: "idle",
+            ...(known.archived === true ? { archived: true } : {}),
+          };
     },
     log: (event, fields) => void fake.logs.push({ event, fields }),
     folder: options.folder ?? process.cwd(),

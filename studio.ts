@@ -34,7 +34,7 @@ export type Deps = {
 };
 
 /** The ids of the manifest panel and session view that play files from the library folder. */
-const MEDIA_IDS = ["studio", "studio-view"];
+const MEDIA_IDS = ["studio-view"];
 
 export const SETTINGS_HINT = "Add it in Settings → Extensions → Music Studio.";
 

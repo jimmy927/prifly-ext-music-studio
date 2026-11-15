@@ -17,10 +17,10 @@ afterEach(() => {
 });
 
 /** Stands in for the page's address and records the urls the page fetches. */
-function page(search: string): string[] {
+function page(pathname: string): string[] {
   const urls: string[] = [];
   Object.assign(globalThis, {
-    location: { search },
+    location: { pathname, search: "" },
     fetch: async (url: string) => {
       urls.push(url);
       return Response.json({});
@@ -29,24 +29,24 @@ function page(search: string): string[] {
   return urls;
 }
 
-test("the docked window knows its session from the address", () => {
-  page("?theme=dark&session=abc-123");
-  expect(panelSession()).toBe("abc-123");
-  page("?theme=dark");
-  expect(panelSession()).toBeNull();
-  page("?session=");
+const VIEW = "/extension-view/music-studio/studio-view/abc%20123/index.html";
+
+test("the session view knows its session from the address", () => {
+  page(VIEW);
+  expect(panelSession()).toBe("abc 123");
+  page("/extension-panel/music-studio/open/open.html");
   expect(panelSession()).toBeNull();
 });
 
 test("every request carries the session, so a paid button's card is asked over it", async () => {
-  const urls = page("?session=abc%20123");
+  const urls = page(VIEW);
   await call("sketch", {});
   await call("project?id=p1");
   expect(urls).toEqual(["api/sketch?session=abc%20123", "api/project?id=p1&session=abc%20123"]);
 });
 
 test("without a session the requests are as before", async () => {
-  const urls = page("?theme=light");
+  const urls = page("/extension-panel/music-studio/open/open.html");
   await call("project?id=p1");
   expect(urls).toEqual(["api/project?id=p1"]);
 });

@@ -1,5 +1,5 @@
 /**
- * The Music Studio window. Data comes from `api/<path>` (see panel-router.ts);
+ * The Music Studio session view. Data comes from `api/<path>` (see panel-router.ts);
  * the page polls while a sketch run is going. The theme arrives in a
  * `prifly-look` message and overrides the tokens in style.css.
  */

@@ -3,7 +3,7 @@
  * linked to a project when one of its tools made or used it (the link is kept
  * in `api.state`, with the tool called last), or when its folder is inside the
  * project's folder. The first tool a session calls also shows the Music Studio
- * view beside its chat (view.ts). The panel docked beside the session asks `follow` which
+ * view beside its chat (view.ts). The view asks `follow` which
  * project that is and which stage the last tool belongs to.
  */
 

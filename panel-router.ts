@@ -6,6 +6,7 @@
 
 import type { PanelRequest } from "@prifly/extension-api";
 import { panelRequest } from "./confirm";
+import { openRoute, startedRoute } from "./open";
 import { isSketchId } from "./project/store";
 import { arrangeRoutes } from "./routes/arrange";
 import { bodyOf, entryOf, type Handler, startedAnswer } from "./routes/common";
@@ -69,13 +70,13 @@ async function sketch(studio: Studio, request: PanelRequest) {
 }
 
 /**
- * The module's `panel` export for the Music Studio window and its session view
- * (`api/view` tells the view which project and stage it was shown with). Every request may
- * carry `session`, the session the window is docked beside: the cards a paid
- * button raises are asked over it (see confirm.ts).
+ * The module's `panel` export for the session view (`api/view` tells it which
+ * project and stage it was shown with) and the status bar's opener page
+ * (`api/open`, `api/started`). A request names its session in the host's
+ * `sessionId`: the cards a paid button raises are asked over it (see confirm.ts).
  */
 export async function route(studio: Studio, request: ViewRequest): Promise<unknown> {
-  // A session view has its session from the host; the docked panel names it in the query.
+  // A session view has its session from the host; the page's own calls name it in the query.
   const session = request.query["session"] ?? request.sessionId ?? "";
   return await panelRequest.run({ session: session === "" ? null : session }, () =>
     answer(studio, request),
@@ -87,6 +88,10 @@ async function answer(studio: Studio, request: ViewRequest): Promise<unknown> {
   switch (path) {
     case "view":
       return await viewRoute(studio, request);
+    case "open":
+      return await openRoute(studio);
+    case "started":
+      return await startedRoute(studio, Number(query["since"] ?? 0));
     case "follow":
       return await followRoute(studio, query["session"] ?? "");
     case "status":

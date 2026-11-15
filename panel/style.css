@@ -320,3 +320,19 @@ textarea {
   padding: 8px 18px;
   font-weight: 600;
 }
+
+/* The status bar's opener page (src/opener.ts): one line, and a retry when it failed. */
+.opener {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px;
+}
+.opener-text {
+  margin: 0;
+  font-size: 14px;
+}
+.opener-text[data-kind="error"] {
+  color: var(--bad, #c0392b);
+}

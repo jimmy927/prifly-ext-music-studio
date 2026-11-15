@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/node_modules", "!panel/app.js"]
+    "includes": ["**", "!**/node_modules", "!panel/app.js", "!panel/opener.js"]
   },
   "formatter": {
     "enabled": true,

@@ -47,10 +47,10 @@ test("the manifest declares the studio session view on the panel's page, with me
     page: "index.html",
     media: true,
   });
-  const [studio] = manifest.panels;
-  expect(studio).toMatchObject({ folder: view?.folder, page: view?.page, media: true });
-  // A view's id is one no panel has.
+  // A view's id is one no panel has, and the view is the only UI: no panel shows the studio.
   expect(manifest.panels.map((each) => each.id)).not.toContain(view?.id);
+  expect(manifest.panels.map((each) => each.id)).not.toContain("studio");
+  expect(manifest.panels.map((each) => each.page)).not.toContain(view?.page);
 });
 
 test("music_open shows the view in the calling session with the project and stage", async () => {
@@ -193,7 +193,7 @@ test("panel(view) answers what the view was shown with, and routes like the pane
     expect(await panel("studio-view", viewRequest("view", {}))).toEqual({ state: "none" });
     // Every other path answers exactly as the panel does.
     expect(await panel("studio-view", viewRequest("library", { project: "x" }))).toEqual(
-      await panel("studio", { path: "library", query: {}, body: null }),
+      await panel("open", { path: "library", query: {}, body: null }),
     );
     await expect(panel("studio-view", viewRequest("nope", {}))).rejects.toThrow("No such route");
   } finally {
@@ -221,10 +221,7 @@ test("the extension serves the library folder for the panel and the view, when p
   const folder = mkdtempSync(join(tmpdir(), "music-studio-media-"));
   const on = fakeApi({ settings: { libraryFolder: folder }, media: true });
   activate(on.api)();
-  expect(on.mediaFolders).toEqual([
-    { panelId: "studio", folder },
-    { panelId: "studio-view", folder },
-  ]);
+  expect(on.mediaFolders).toEqual([{ panelId: "studio-view", folder }]);
   const off = fakeApi({ settings: { libraryFolder: folder } });
   activate(off.api)();
   expect(off.mediaFolders).toEqual([]);
@@ -238,7 +235,7 @@ test("api/media sends a streaming url where the folder is served, else base64", 
   // Not served yet: base64, even when the page asks for a stream.
   expect(await ask({ stream: "1" })).toHaveProperty("base64");
   w.studio.serveMedia();
-  expect(w.fake.mediaFolders.map((each) => each.panelId)).toEqual(["studio", "studio-view"]);
+  expect(w.fake.mediaFolders.map((each) => each.panelId)).toEqual(["studio-view"]);
   expect(await ask({ stream: "1" })).toEqual({
     mime: "audio/mpeg",
     url: `media/${entry.dir}/sketches/a.mp3`,
@@ -255,9 +252,9 @@ test("the page knows the session view's address and its session", () => {
     at("/extension-view/music-studio/studio-view/abc%20123/index.html");
     expect(inSessionView()).toBe(true);
     expect(panelSession()).toBe("abc 123");
-    at("/extension-panel/music-studio/studio/index.html", "?session=s1");
+    at("/extension-panel/music-studio/open/open.html", "");
     expect(inSessionView()).toBe(false);
-    expect(panelSession()).toBe("s1");
+    expect(panelSession()).toBeNull();
   } finally {
     Object.assign(globalThis, { location: original });
   }

@@ -2,11 +2,13 @@
  * The session view (the App tab beside a chat): it opens the project and stage
  * it was shown with (`api/view`), then `follow.ts` keeps it with the session's
  * tool calls. While that runs the page says so; a project that is gone gets a
- * line and a way to the Library.
+ * line and a way to the Library, and a view shown with no project opens on the
+ * Library.
  */
 
 import { call, errorText, type ViewAnswer } from "./api";
 import { openProject } from "./follow";
+import { go } from "./header";
 import type { View } from "./state";
 import { app, redraw } from "./state";
 
@@ -20,7 +22,9 @@ export async function openSessionView(): Promise<void> {
   try {
     const answer = await call<ViewAnswer>("view");
     if (answer.state === "none") {
+      // No project yet: the Library, to open one or start a new one from Idea.
       app.opening = null;
+      go("library");
     } else if (answer.state === "missing") {
       app.opening = { state: "missing", text: MISSING_TEXT };
     } else {

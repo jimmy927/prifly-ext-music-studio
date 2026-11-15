@@ -58,10 +58,8 @@ export function inSessionView(): boolean {
   return VIEW_PATH.test(pathOf());
 }
 
-/** The session this window is docked beside (`session=` in its address, or the session view's), or null on its own. */
+/** The session this page is shown in (the session view's address), or null elsewhere. */
 export function panelSession(): string | null {
-  const id = new URLSearchParams(location.search).get("session");
-  if (id !== null && id !== "") return id;
   const viewed = VIEW_PATH.exec(pathOf())?.[1];
   if (viewed === undefined) return null;
   try {

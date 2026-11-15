@@ -6,7 +6,8 @@
  *
  * The installed `@prifly/extension-api` does not declare the session view
  * calls yet, so they are declared here and looked up behind the feature check:
- * a prifly without them keeps the panel and the tools working as before.
+ * a prifly without them keeps the tools working, and the Music Studio
+ * session's brief says to update prifly (open.ts).
  */
 
 import type { ExtensionApi, PanelRequest } from "@prifly/extension-api";
@@ -30,7 +31,7 @@ export type ViewApi = {
 
 /** What a prifly that predates session views is answered with. */
 export const OLD_PRIFLY =
-  "This prifly cannot show a view beside the chat. Update prifly; the Music Studio window in the status bar still works.";
+  "This prifly cannot show the Music Studio beside the chat. Update prifly to see it; the music_* and video_* tools still work.";
 
 /** The session view calls, or null when this prifly has none. */
 export function viewApi(api: ExtensionApi): ViewApi | null {
@@ -43,16 +44,19 @@ export function viewApi(api: ExtensionApi): ViewApi | null {
   return { show: (sessionId, viewId, params) => show.call(candidate, sessionId, viewId, params) };
 }
 
+/** The project a session's view was shown on; "" for the Library. */
 type Shown = Record<string, { project: string }>;
 const DOC = "session-views";
 const KEEP = 300;
 
-function paramsOf(project: string, stage: StageId | null): Record<string, string> {
+function paramsOf(project: string | null, stage: StageId | null): Record<string, string> {
+  if (project === null) return {};
   return stage === null ? { project } : { project, stage };
 }
 
 /**
- * Shows the view in `session` on `project`. With `force` it is shown again
+ * Shows the view in `session` on `project`, or on the Library when `project`
+ * is null. With `force` it is shown again
  * whatever is shown; without, only when the session has no view yet or has one
  * on another project, so a tool call after the first leaves the page to its own
  * polling. Returns whether it was shown; a failure is logged, never thrown.
@@ -60,7 +64,7 @@ function paramsOf(project: string, stage: StageId | null): Record<string, string
 export async function showView(
   studio: Studio,
   session: string,
-  project: string,
+  project: string | null,
   stage: StageId | null,
   force: boolean,
 ): Promise<boolean> {
@@ -75,10 +79,10 @@ export async function showView(
   await state.update<Shown>(DOC, (current) => {
     const shown = { ...(current ?? {}) };
     result.before = shown[session];
-    result.fire = force || result.before === undefined || result.before.project !== project;
+    result.fire = force || result.before === undefined || result.before.project !== (project ?? "");
     if (!result.fire) return shown;
     delete shown[session];
-    shown[session] = { project };
+    shown[session] = { project: project ?? "" };
     for (const old of Object.keys(shown).slice(0, Math.max(0, Object.keys(shown).length - KEEP)))
       delete shown[old];
     return shown;
@@ -129,7 +133,11 @@ export type ViewAnswer =
 
 /** The project and stage the view was shown with (`request.params`), as the page opens them. */
 export async function viewRoute(studio: Studio, request: ViewRequest): Promise<ViewAnswer> {
-  const project = request.params?.["project"] ?? "";
+  const session = request.sessionId ?? request.query["session"] ?? "";
+  const resolved = session === "" ? null : await resolveLink(studio, session);
+  // Shown with no project (the Library): the session's own project once it has one, else the Library.
+  const given = request.params?.["project"] ?? "";
+  const project = given !== "" ? given : resolved?.state === "following" ? resolved.entry.id : "";
   if (project === "") return { state: "none" };
   let entry: Awaited<ReturnType<typeof entryOf>>;
   try {
@@ -139,8 +147,6 @@ export async function viewRoute(studio: Studio, request: ViewRequest): Promise<V
   }
   const wanted = request.params?.["stage"];
   const stage = STAGE_IDS.find((each) => each === wanted) ?? null;
-  const session = request.sessionId ?? request.query["session"] ?? "";
-  const resolved = session === "" ? null : await resolveLink(studio, session);
   const stamp = resolved?.state === "following" && resolved.entry.id === entry.id ? resolved.at : 0;
   return { state: "open", project: entry.id, title: entry.title, stage, stamp };
 }

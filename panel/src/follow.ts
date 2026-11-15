@@ -1,6 +1,5 @@
 /**
- * Following the session this window is docked beside (`session=` in its
- * address). Every 2 s while the window is visible it asks `api/follow` which
+ * Following the session this view is shown in (the session in its address). Every 2 s while the window is visible it asks `api/follow` which
  * project that session works on and which stage its last tool belongs to; it
  * opens the project when the link changes and moves to the stage when the
  * session calls another tool. The reader can still go anywhere; the Follow

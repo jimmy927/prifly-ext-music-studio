@@ -132,6 +132,8 @@ export function world(
     /** Offer prifly's session views and panel media. */
     views?: boolean;
     media?: boolean;
+    /** Offer "panel-open-session". */
+    openSession?: boolean;
   } = {},
 ): World {
   const folder = mkdtempSync(join(tmpdir(), "music-studio-library-"));
@@ -150,6 +152,7 @@ export function world(
     ...(options.dialog === undefined ? {} : { dialog: options.dialog }),
     ...(options.views === undefined ? {} : { views: options.views }),
     ...(options.media === undefined ? {} : { media: options.media }),
+    ...(options.openSession === undefined ? {} : { openSession: options.openSession }),
   });
   const calls: Call[] = [];
   const fetchFn: Fetch = async (input, init) => {

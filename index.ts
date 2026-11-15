@@ -1,12 +1,18 @@
 /**
  * The Music Studio extension: what prifly imports. `activate` registers the
- * session tools and keeps the status line; `panel` answers the Music Studio
- * window. The ElevenLabs and Gemini keys are `secret` settings, kept in this
+ * session tools and keeps the status line; `panel` answers the studio view in a
+ * session's App tab and the status bar's opener page (open.ts), and `choices`,
+ * `launch` and `launched` start the Music Studio session. The ElevenLabs and Gemini keys are `secret` settings, kept in this
  * extension's own sealed secrets, never in prifly's vault.
  */
 
-import type { ExtensionApi } from "@prifly/extension-api";
+import type { ExtensionApi, Launch, LaunchChoice } from "@prifly/extension-api";
 import { allTools } from "./all-tools";
+import {
+  choices as launchChoices,
+  launch as launchSession,
+  launched as sessionLaunched,
+} from "./open";
 import { route } from "./panel-router";
 import { Studio } from "./studio";
 import type { ViewRequest } from "./view";
@@ -46,7 +52,22 @@ export function activate(given: ExtensionApi): () => void {
   };
 }
 
-/** The Music Studio window and its session view answer alike: `request.params` says what the view was shown with. */
+/** The opener page and the session view answer alike: `request.params` says what the view was shown with. */
 export function panel(_panelId: string, request: ViewRequest): Promise<unknown> {
   return route(studio, request);
+}
+
+/** The launcher's one row, for the New session form. */
+export function choices(): LaunchChoice[] {
+  return launchChoices();
+}
+
+/** What a click on the status bar's Music Studio starts: a session with the studio's brief. */
+export function launch(): Launch {
+  return launchSession(studio);
+}
+
+/** The session a launch became: its studio view is shown on the Library. */
+export function launched(_launchId: string, _key: string, session: string): Promise<void> {
+  return sessionLaunched(studio, session);
 }

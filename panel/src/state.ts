@@ -56,7 +56,7 @@ export type App = {
   };
   /** The session view opening the project it was shown with: loading, or why it could not. */
   opening: { state: "loading" | "missing" | "error"; text: string } | null;
-  /** Following the session the window is docked beside; `session` is null when it is not docked. */
+  /** Following the session the view is shown in; `session` is null outside a session view. */
   follow: {
     session: string | null;
     on: boolean;
