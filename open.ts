@@ -119,6 +119,8 @@ export type OpenAnswer = {
 /** `api/open`: reuse the Music Studio session and show its studio, or say a new one must be started. */
 export async function openRoute(studio: Studio): Promise<OpenAnswer> {
   const api = studio.api();
+  // Without state no session can be remembered: starting one would start another at every click.
+  if (api.state === undefined) throw new Error("This prifly keeps no state. Update prifly.");
   const base = {
     since: Date.now(),
     canOpen: (api.features ?? []).includes("panel-open-session"),

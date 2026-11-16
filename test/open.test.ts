@@ -291,3 +291,14 @@ test("the opener page says when no session came, and when it could not even ask"
     text: "Could not open Music Studio: This prifly keeps no state. Update prifly.",
   });
 });
+
+test("on a prifly without state the click fails with a message and starts nothing", async () => {
+  const { fake, stop } = running({ views: true, openSession: true });
+  try {
+    delete (fake.api as { state?: unknown }).state;
+    await expect(click()).rejects.toThrow("This prifly keeps no state. Update prifly.");
+    expect(fake.viewShown).toEqual([]);
+  } finally {
+    stop();
+  }
+});
