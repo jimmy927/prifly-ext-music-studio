@@ -48,6 +48,11 @@ function promptFor(treatment: Treatment, list: ShotList, lyrics: Map<string, str
     treatment.cast.length === 0
       ? "Cast: none"
       : `Cast: ${treatment.cast.map((each) => each.name || "unnamed").join(", ")}`,
+    ...(treatment.references.length === 0
+      ? []
+      : [
+          `Reference clips from the reader's own footage: ${treatment.references.map((each) => `${each.name}${each.note === "" ? "" : ` (${each.note})`}`).join("; ")}`,
+        ]),
     "",
     "Shots, in order:",
     ...lines,

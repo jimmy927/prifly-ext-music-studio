@@ -26,6 +26,8 @@ export type Kind =
   | "master"
   | "cast"
   | "frame"
+  | "source"
+  | "sourceframe"
   | "take"
   | "preview";
 

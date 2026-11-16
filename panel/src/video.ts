@@ -68,7 +68,7 @@ export async function mediaUrl(
 /** A picture that loads when it is built; `alt` stands in until then and if it fails. */
 export function picture(
   project: string,
-  kind: "cast" | "frame",
+  kind: "cast" | "frame" | "source" | "sourceframe",
   id: string,
   key: string,
   alt: string,

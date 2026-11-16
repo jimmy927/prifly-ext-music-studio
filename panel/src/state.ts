@@ -40,6 +40,8 @@ export type App = {
   status: Status | null;
   statusError: string | null;
   draft: Brief;
+  /** Paths of source material waiting for the next sketch (no project yet). */
+  sources: string[];
   project: ProjectView | null;
   job: Job | null;
   /** The sketch request is out and the reader has not answered the confirm card yet. */
@@ -73,6 +75,7 @@ export const app: App = {
   status: null,
   statusError: null,
   draft: { ...EMPTY_BRIEF },
+  sources: [],
   project: null,
   job: null,
   confirming: false,

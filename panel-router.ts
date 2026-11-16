@@ -20,6 +20,7 @@ import { mixRoutes } from "./routes/mix";
 import { prepareRoutes } from "./routes/prepare";
 import { produceRoutes } from "./routes/produce";
 import { shootRoutes } from "./routes/shoot";
+import { sourcesRoutes } from "./routes/sources";
 import { storyboardRoutes } from "./routes/storyboard";
 import { treatmentRoutes } from "./routes/treatment";
 import { tempoOf } from "./routes/video-common";
@@ -37,6 +38,7 @@ const STAGE_ROUTES: Record<string, Handler> = {
   ...deliverRoutes,
   ...crateRoutes,
   ...treatmentRoutes,
+  ...sourcesRoutes,
   ...storyboardRoutes,
   ...shootRoutes,
   ...editRoutes,

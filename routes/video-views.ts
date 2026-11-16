@@ -1,5 +1,6 @@
 /** The shapes the Video stages' routes answer with, so the page and the routes agree. Types only. */
 
+import type { AudioFound, Seen, Synthesis } from "../sources/types";
 import type { Job } from "../studio";
 import type { ShotBars } from "../video/constants";
 import type { Shot, ShotList } from "../video/shotlist";
@@ -13,6 +14,36 @@ export type MoneyView = {
   remainingUsd: number;
   /** The project has its own budget, not the extension setting's. */
   own: boolean;
+};
+
+export type SourceItem = {
+  id: string;
+  name: string;
+  kind: "image" | "video";
+  durationSec: number | null;
+  /** A small picture of it can be fetched as media kind `source`. */
+  hasPicture: boolean;
+  /** How many sampled frames can be fetched as media kind `sourceframe` (`<id>.<n>`, from 0). */
+  frames: number;
+  seen: Seen | null;
+  audio: AudioFound | null;
+  notes: string[];
+};
+
+/** A project's source material as the Idea and Treatment stages show it. */
+export type SourcesView = {
+  geminiKey: boolean;
+  /** Whether ffmpeg starts, when a video needs it; null with no video. */
+  ffmpeg: { ok: boolean; message: string } | null;
+  /** none: nothing added; unread: added, not read yet; read; failed: the last read failed (`error`). */
+  state: "none" | "unread" | "read" | "failed";
+  error: string | null;
+  notes: string[];
+  analysedAt: string | null;
+  items: SourceItem[];
+  synthesis: Synthesis | null;
+  /** The reading run going now, if any. */
+  running: Job | null;
 };
 
 export type CastView = {
@@ -32,6 +63,8 @@ export type TreatmentView = {
     vertical: boolean;
     shotBars: ShotBars;
     cast: CastView[];
+    /** Source videos kept as shot references. */
+    references: { id: string; name: string; note: string }[];
   };
   money: MoneyView;
   prices: { imageUsd: number; videoPerSecondUsd: number; resolution: string };

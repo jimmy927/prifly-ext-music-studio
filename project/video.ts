@@ -9,6 +9,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Picture } from "../engines/gemini-video";
 import { isRecord } from "../engines/types";
+import { MAX_REFERENCES_KEPT } from "../sources/constants";
 import { type Ledger, parseBudget, type SpendEntry, type SpendKind } from "../video/budget";
 import { DEFAULT_SHOT_BARS, MAX_CAST, SHOT_BARS, type ShotBars } from "../video/constants";
 import { isShotId, type Shot, type ShotList } from "../video/shotlist";
@@ -64,6 +65,19 @@ export type Treatment = {
   /** The project's own budget; null means the extension's setting. */
   budgetUsd: number | null;
   cast: CastMember[];
+  /** Video clips from the project's source material, kept as references for the shots. */
+  references: ShotReference[];
+};
+
+/** A source video kept in the treatment: what it shows, as the shots may echo it. */
+export type ShotReference = {
+  /** The source's id in the project's sources.json (`s2`). */
+  id: string;
+  name: string;
+  /** What the clip shows, in a line. */
+  note: string;
+  /** The link or copy in the project's folder, when there is one. */
+  file: string | null;
 };
 
 export const EMPTY_TREATMENT: Treatment = {
@@ -73,7 +87,23 @@ export const EMPTY_TREATMENT: Treatment = {
   shotBars: DEFAULT_SHOT_BARS,
   budgetUsd: null,
   cast: [],
+  references: [],
 };
+
+function parseReferences(raw: unknown): ShotReference[] {
+  const out: ShotReference[] = [];
+  for (const each of Array.isArray(raw) ? raw : []) {
+    if (!isRecord(each) || typeof each["id"] !== "string" || typeof each["name"] !== "string")
+      continue;
+    out.push({
+      id: each["id"].slice(0, 8),
+      name: each["name"].slice(0, 120),
+      note: typeof each["note"] === "string" ? each["note"].slice(0, 600) : "",
+      file: typeof each["file"] === "string" ? each["file"] : null,
+    });
+  }
+  return out.slice(0, MAX_REFERENCES_KEPT);
+}
 
 function parseCast(raw: unknown): CastMember[] {
   const out: CastMember[] = [];
@@ -95,7 +125,7 @@ const text = (value: unknown, max: number): string =>
 
 /** A treatment from untrusted data; anything off is the default. */
 export function parseTreatment(raw: unknown): Treatment {
-  if (!isRecord(raw)) return { ...EMPTY_TREATMENT, cast: [] };
+  if (!isRecord(raw)) return { ...EMPTY_TREATMENT, cast: [], references: [] };
   const bars = SHOT_BARS.find((each) => each === raw["shotBars"]);
   const budget = raw["budgetUsd"];
   return {
@@ -105,6 +135,7 @@ export function parseTreatment(raw: unknown): Treatment {
     shotBars: bars ?? DEFAULT_SHOT_BARS,
     budgetUsd: typeof budget === "number" && budget >= 0 ? parseBudget(budget) : null,
     cast: parseCast(raw["cast"]),
+    references: parseReferences(raw["references"]),
   };
 }
 

@@ -327,3 +327,69 @@
 .renders {
   min-height: 40px;
 }
+
+/* Source material (Idea and Treatment): pictures and videos the song and video start from, and what was found in them. */
+.sources {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+}
+.sources-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.source-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  padding: 8px;
+  min-width: 0;
+}
+.frame-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 64px;
+  gap: 4px;
+  overflow-x: auto;
+}
+.frame-strip .pic-wrap {
+  aspect-ratio: 16 / 9;
+}
+.pic-wrap.empty-pic {
+  color: var(--muted-fg);
+  font-size: 12px;
+}
+.found {
+  margin: 2px 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.found-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.synthesis {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--muted);
+}
+.synthesis h4 {
+  margin: 0 0 6px;
+}
+.staged ul,
+.references ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}

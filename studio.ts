@@ -21,8 +21,12 @@ import {
   titleOf,
 } from "./project/brief";
 import { Crates } from "./project/crates";
+import { saveSources } from "./project/sources";
 import { type IndexEntry, libraryFolder, Store } from "./project/store";
 import { noteProject } from "./session";
+import { cardLine, type Plan, planSources, readSources } from "./sources/analyse";
+import { pathsOf } from "./sources/files";
+import { hasText, mergeBrief, PLACEHOLDER_TEXT } from "./sources/merge";
 
 export type Deps = {
   api: () => ExtensionApi | null;
@@ -50,6 +54,7 @@ export type JobKind =
   | "shoot"
   | "master"
   | "analyse"
+  | "sources"
   | "deliver"
   | "draft"
   | "preview"
@@ -223,17 +228,31 @@ export const fail = (
   message,
 });
 
-/** The confirm card's words for a sketch run. */
-export function confirmSpec(brief: Brief): Parameters<NonNullable<ExtensionApi["confirm"]>>[0] {
+/** The confirm card's words for a sketch run; with `plan`, the card also names the source material that is read first. */
+export function confirmSpec(
+  brief: Brief,
+  plan: Plan | null = null,
+  explicitText = true,
+): Parameters<NonNullable<ExtensionApi["confirm"]>>[0] {
   const engine = ENGINE_LABELS[brief.engine];
   const cost =
     brief.engine === "elevenlabs"
       ? "billed by ElevenLabs to your plan (its API gives no per-track price, so none is shown)"
       : "billed to your Gemini key (Google's price per clip is not shown here)";
+  const reading = plan === null ? "" : cardLine(plan);
+  const content =
+    plan === null
+      ? buildPrompt(brief)
+      : [
+          explicitText
+            ? buildPrompt(brief)
+            : "A brief, lyrics, tempo and key written from the source material.",
+          `Source material: ${plan.files.map((each) => each.name).join(", ")}`,
+        ].join("\n");
   return {
     title: "Sketch 3 ideas",
-    summary: `Make 3 sketches of 30 seconds with ${engine}: ${cost}`,
-    content: buildPrompt(brief),
+    summary: `Make 3 sketches of 30 seconds with ${engine}: ${cost}${reading === "" ? "" : `. First: ${reading}`}`,
+    content,
     details: `${brief.engine === "elevenlabs" ? "POST /v1/music/detailed, model music_v2_5" : "POST /v1beta/interactions, model lyria-3-clip-preview"}, ${SKETCH_MS} ms, ${brief.vocals === "instrumental" ? "instrumental" : "with vocals"}, three calls`,
   };
 }
@@ -268,18 +287,53 @@ export function endFailed(job: Job, caught: unknown, signal: AbortSignal): void 
   }
 }
 
+/** The source material a sketch run reads first: the plan, and the arguments the brief is merged from. */
+type FromSources = { plan: Plan; raw: Record<string, unknown> };
+
+/** Reads the source material, makes the project from the brief it suggests, and keeps the sources in it. */
+async function startFromSources(
+  studio: Studio,
+  job: Job,
+  from: FromSources,
+  signal: AbortSignal,
+): Promise<{ entry: IndexEntry; brief: Brief }> {
+  job.label = "Reading the source material";
+  const read = await readSources(studio, from.plan, signal, (text) => {
+    job.label = text;
+  });
+  const brief = parseBrief(mergeBrief(from.raw, read.synthesis));
+  if (typeof brief === "string") throw new Error(brief);
+  const store = studio.store();
+  const entry = await store.create(brief, titleOf(brief));
+  await saveSources(
+    studio,
+    store.pathOf(entry),
+    from.plan.files,
+    read.described,
+    read.synthesis,
+    read.notes,
+  );
+  await noteProject(studio, entry.id);
+  job.project = entry.id;
+  job.label = "Sketching 3 ideas";
+  return { entry, brief };
+}
+
 /** Makes the sketches one after another into the project; ends the job whatever happens. */
 async function run(
   studio: Studio,
   job: Job,
-  entry: IndexEntry,
-  brief: Brief,
+  start: { entry: IndexEntry | null; brief: Brief },
   key: string,
   signal: AbortSignal,
+  from: FromSources | null,
 ) {
   const store = studio.store();
+  let { entry, brief } = start;
   let failure: { caught: unknown } | null = null;
   try {
+    if (from !== null) ({ entry, brief } = await startFromSources(studio, job, from, signal));
+    if (entry === null) throw new Error("The project was not made.");
     for (const id of SKETCH_IDS) {
       if (signal.aborted) break;
       await store.saveSketch(entry, id, await makeOne(studio, brief, key, signal), brief.engine);
@@ -289,7 +343,7 @@ async function run(
     failure = { caught };
   }
   // A project with no sketch is only clutter in the library. The run ends only after it is gone.
-  if (job.done.length === 0) {
+  if (job.done.length === 0 && entry !== null) {
     try {
       await store.remove(entry);
       job.project = null;
@@ -303,34 +357,23 @@ async function run(
   return job;
 }
 
-/**
- * "Sketch 3 ideas": checks, asks the reader, and starts the run. Nothing is
- * spent before the reader confirms. `linked` aborts the run when it fires
- * (the session that called the tool went away).
- */
-export async function startSketch(
-  studio: Studio,
-  raw: unknown,
-  linked?: AbortSignal,
-): Promise<Started> {
-  const brief = parseBrief(raw);
-  if (typeof brief === "string") return fail("invalid", brief);
-  const key = await studio.key(brief.engine);
-  if (key === null) {
-    const which = brief.engine === "elevenlabs" ? "ElevenLabs" : "Gemini";
-    return fail("no_key", `There is no ${which} key. ${SETTINGS_HINT}`);
-  }
-  const answer = await askReader(studio.api(), confirmSpec(brief));
-  if (answer === null)
-    return fail("unsupported", "This prifly cannot ask you first. Update prifly.");
-  if (!answer) return fail("cancelled", "Not done: you cancelled.");
-  const entry = await studio.store().create(brief, titleOf(brief));
-  await noteProject(studio, entry.id);
-  const job: Job = {
+/** The arguments with a brief text and lyrics the checks accept while the source material is still unread. */
+function provisional(raw: Record<string, unknown>): Record<string, unknown> {
+  const mine = raw["vocals"] === "mine" && String(raw["lyrics"] ?? "").trim() === "";
+  return {
+    ...raw,
+    text: hasText(raw) ? raw["text"] : PLACEHOLDER_TEXT,
+    ...(mine ? { lyrics: "(written from the source material)" } : {}),
+  };
+}
+
+/** The job a sketch run reports on; its project is known now, or once the source material is read. */
+function sketchJob(brief: Brief, hasProject: boolean, entry: IndexEntry | null): Job {
+  return {
     id: crypto.randomUUID().slice(0, 8),
     work: "sketch",
-    label: "Sketching 3 ideas",
-    project: entry.id,
+    label: hasProject ? "Sketching 3 ideas" : "Reading the source material",
+    project: entry?.id ?? null,
     engine: brief.engine,
     status: "running",
     done: [],
@@ -340,8 +383,57 @@ export async function startSketch(
     kind: null,
     suggestion: null,
   };
+}
+
+/** The plan for the call's `sources`; null with none, a failure to answer with when they cannot be read. */
+async function sourcePlan(
+  studio: Studio,
+  args: Record<string, unknown>,
+): Promise<Plan | Extract<Started, { ok: false }> | null> {
+  if (pathsOf(args["sources"]).length === 0) return null;
+  const planned = await planSources(studio, args["sources"]);
+  if (planned.ok) return planned.plan;
+  return {
+    ok: false,
+    reason: planned.reason === "no_key" ? "no_key" : "invalid",
+    message: planned.message,
+  };
+}
+
+/**
+ * "Sketch 3 ideas": checks, asks the reader, and starts the run. Nothing is
+ * spent before the reader confirms. `linked` aborts the run when the session
+ * that called the tool went away. With `sources` (files and folders of
+ * pictures and videos) one card covers reading them as well, and the run
+ * reads them first: the brief, tempo, key and lyrics the call left out come
+ * from what they show.
+ */
+export async function startSketch(
+  studio: Studio,
+  raw: unknown,
+  linked?: AbortSignal,
+): Promise<Started> {
+  const args = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  const planned = await sourcePlan(studio, args);
+  if (planned !== null && "ok" in planned) return planned;
+  const plan = planned;
+  const brief = parseBrief(plan === null ? raw : provisional(args));
+  if (typeof brief === "string") return fail("invalid", brief);
+  const key = await studio.key(brief.engine);
+  if (key === null) {
+    const which = brief.engine === "elevenlabs" ? "ElevenLabs" : "Gemini";
+    return fail("no_key", `There is no ${which} key. ${SETTINGS_HINT}`);
+  }
+  const answer = await askReader(studio.api(), confirmSpec(brief, plan, hasText(args)));
+  if (answer === null)
+    return fail("unsupported", "This prifly cannot ask you first. Update prifly.");
+  if (!answer) return fail("cancelled", "Not done: you cancelled.");
+  const entry = plan === null ? await studio.store().create(brief, titleOf(brief)) : null;
+  if (entry !== null) await noteProject(studio, entry.id);
+  const job = sketchJob(brief, plan === null, entry);
   const abort = new AbortController();
   linked?.addEventListener("abort", () => abort.abort());
   studio.register(job, abort);
-  return { ok: true, job, finished: run(studio, job, entry, brief, key, abort.signal) };
+  const from = plan === null ? null : { plan, raw: args };
+  return { ok: true, job, finished: run(studio, job, { entry, brief }, key, abort.signal, from) };
 }

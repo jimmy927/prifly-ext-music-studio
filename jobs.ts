@@ -22,7 +22,7 @@ import {
 export type Confirm = Parameters<NonNullable<ExtensionApi["confirm"]>>[0];
 
 export type Work = {
-  work: Extract<JobKind, "arrange" | "stems" | "sfx" | "cast" | "frames" | "shoot">;
+  work: Extract<JobKind, "arrange" | "stems" | "sfx" | "cast" | "frames" | "shoot" | "sources">;
   /** Whose key pays: ElevenLabs (the default) or Gemini. */
   provider?: "gemini";
   label: string;

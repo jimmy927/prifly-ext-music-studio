@@ -65,7 +65,7 @@ function outputBlocks(body: unknown): Record<string, unknown>[] {
     .flatMap((step) => (step["content"] as unknown[]).filter(isRecord));
 }
 
-const textOf = (body: unknown): string =>
+export const textOf = (body: unknown): string =>
   outputBlocks(body)
     .filter((block) => block["type"] === "text")
     .map((block) => asString(block["text"]))

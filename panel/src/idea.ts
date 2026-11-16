@@ -5,6 +5,7 @@ import { type Child, fill, h, icon } from "./dom";
 import { buildForm } from "./form";
 import { loadStatus } from "./header";
 import { renderSketches } from "./sketches";
+import { mountSources } from "./sources";
 import { app, type Notice, redraw } from "./state";
 
 const POLL_MS = 1500;
@@ -17,8 +18,9 @@ export function blocker(): string | null {
   if (status === null)
     return app.statusError === null ? "Loading your keys…" : "Cannot reach the extension.";
   if (app.confirming || app.job?.status === "running") return "A run is in progress.";
-  if (app.draft.text.trim() === "") return "Write a brief first.";
-  if (app.draft.vocals === "mine" && app.draft.lyrics.trim() === "")
+  if (app.draft.text.trim() === "" && app.sources.length === 0)
+    return "Write a brief first, or add source material.";
+  if (app.draft.vocals === "mine" && app.draft.lyrics.trim() === "" && app.sources.length === 0)
     return "Paste your lyrics, or pick another vocals option.";
   if (app.draft.engine === "elevenlabs") {
     if (!status.elevenlabs.keySet)
@@ -84,9 +86,10 @@ async function sketch(): Promise<void> {
   app.confirming = true;
   redraw("idea");
   try {
-    const answer = await call<SketchAnswer>("sketch", app.draft);
+    const answer = await call<SketchAnswer>("sketch", { ...app.draft, sources: app.sources });
     app.confirming = false;
     if (answer.ok) {
+      app.sources = [];
       app.job = answer.job;
       startPolling();
       return;
@@ -186,6 +189,7 @@ export function mountIdea(): { root: HTMLElement; update: () => void; sync: () =
   const why = h("p", { class: "why", role: "status" });
   const cost = h("p", { class: "cost" });
   const form = buildForm(() => update());
+  const sources = mountSources({ where: "idea", redraw: () => redraw("idea") });
 
   function update(): void {
     const reason = blocker();
@@ -196,6 +200,7 @@ export function mountIdea(): { root: HTMLElement; update: () => void; sync: () =
         ? "Billed by ElevenLabs to your plan. You confirm first."
         : "Billed to your Gemini key. You confirm first.";
     fill(messages, ...notices());
+    sources.update();
     fill(
       side,
       renderSketches(() => void cancel(), cancelling),
@@ -210,6 +215,7 @@ export function mountIdea(): { root: HTMLElement; update: () => void; sync: () =
       h("h2", null, "Idea"),
       messages,
       form.root,
+      sources.root,
       h("div", { class: "actions" }, button, cost),
       why,
     ),
@@ -221,6 +227,7 @@ export function mountIdea(): { root: HTMLElement; update: () => void; sync: () =
     update,
     sync: () => {
       form.sync();
+      sources.sync();
       update();
     },
   };

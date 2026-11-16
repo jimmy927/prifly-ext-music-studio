@@ -46,7 +46,7 @@
     {
       "id": "geminiKey",
       "label": "Gemini key",
-      "description": "From aistudio.google.com, Get API key. Used for Lyria 3 Clip and Lyria 3.5, and for the video stages: still frames (Gemini 3.1 Flash Image) and clips (Gemini Omni 1.2 Flash). Video needs a paid tier (billing on).",
+      "description": "From aistudio.google.com, Get API key. Used for Lyria 3 Clip and Lyria 3.5, for reading shared pictures and videos (source material: a few cents), and for the video stages: still frames (Gemini 3.1 Flash Image) and clips (Gemini Omni 1.2 Flash). Video needs a paid tier (billing on).",
       "type": "secret",
       "default": false
     },

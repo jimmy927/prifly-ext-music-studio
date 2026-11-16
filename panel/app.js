@@ -418,6 +418,7 @@ var app = {
   status: null,
   statusError: null,
   draft: { ...EMPTY_BRIEF },
+  sources: [],
   project: null,
   job: null,
   confirming: false,
@@ -1823,8 +1824,353 @@ function renderSketches(cancel, cancelling) {
   return h("section", { class: "side", "data-part": "sketches" }, h("h2", null, heading), progress2(cancel, cancelling), empty ? h("p", { class: "empty" }, "Nothing sketched yet. Write a brief, pick a preset if you like, and press Sketch 3 ideas.") : h("ul", { class: "cards" }, ...SKETCH_IDS.map((id, index) => slot3(id, index))), project === null ? null : h("p", { class: "meta folder" }, `Saved in ${project.folder}`));
 }
 
-// panel/src/idea.ts
+// sources/constants.ts
+var MAX_PICTURE_FILE_BYTES = 40 * 1024 * 1024;
+var MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+// panel/src/source-parts.ts
+function thumbs(project, item) {
+  if (item.kind === "image") {
+    return item.hasPicture ? picture(project, "source", item.id, item.id, item.name) : h("div", { class: "pic-wrap empty-pic" }, "Not read yet");
+  }
+  if (item.frames === 0)
+    return h("div", { class: "pic-wrap empty-pic" }, "Video: no frames yet");
+  const strip = h("div", { class: "frame-strip", "data-part": "frames" });
+  for (let at = 0;at < item.frames; at += 1) {
+    const id = `${item.id}.${at}`;
+    strip.append(picture(project, "sourceframe", id, id, `${item.name}, frame ${at + 1}`));
+  }
+  return strip;
+}
+var line = (label, value) => value === null || value === undefined || value === "" ? null : h("p", { class: "found" }, h("strong", null, `${label}: `), value);
+var joined = (...parts) => parts.filter((each) => each !== "").join(", ");
+function found(item) {
+  const { seen, audio } = item;
+  return h("div", { class: "found-box" }, seen === null ? h("p", { class: "meta" }, "Not read yet.") : h("div", null, line("People", seen.people), line("Place", seen.place), line("Happens", seen.actions), line("Mood", seen.mood), line("Colours", seen.colours), line("Text", seen.text === "" ? null : `“${seen.text}”`)), audio === null ? null : h("div", { class: "audio-found" }, line("Tempo", audio.bpm === null ? null : `${Math.round(audio.bpm)} BPM`), line("Key", audio.key), line("Sound", joined(audio.mood, audio.genre)), line("Language", audio.language), audio.note === null ? null : h("p", { class: "meta" }, audio.note)));
+}
+function tile(project, item) {
+  const length = item.durationSec === null ? "" : `, ${Math.round(item.durationSec)} s`;
+  return h("div", { class: `source-tile ${item.kind}`, "data-source": item.id }, thumbs(project, item), h("span", { class: "card-title" }, item.name), h("span", { class: "meta" }, item.kind === "video" ? `Video${length}` : "Picture"), found(item));
+}
+function toBase64(bytes) {
+  let binary = "";
+  for (let at = 0;at < bytes.length; at += 32768)
+    binary += String.fromCharCode(...bytes.subarray(at, at + 32768));
+  return btoa(binary);
+}
+function stagedList(paths, remove) {
+  return h("div", { class: "staged", "data-state": "staged" }, h("p", null, `${plural(paths.length, "source")} will be read when you press Sketch 3 ideas (the same confirm card covers it; a few cents at most):`), h("ul", null, ...paths.map((path) => h("li", null, path.split(/[\\/]/).pop() ?? path, " ", h("button", {
+    type: "button",
+    class: "btn small",
+    "aria-label": `Remove ${path}`,
+    onclick: () => remove(path)
+  }, "Remove")))));
+}
+function noticeRow(message) {
+  if (message === null)
+    return null;
+  return h("div", { class: `notice ${message.tone}`, role: message.tone === "error" ? "alert" : "status" }, icon(message.tone === "info" ? "info" : "alert"), h("div", { class: "notice-body" }, message.text));
+}
+function progressRow(confirming, job) {
+  if (confirming)
+    return h("div", { class: "progress", role: "status", "data-state": "confirming" }, h("span", null, "Waiting for you to confirm the cost in prifly…"));
+  if (job === null || job.status !== "running")
+    return null;
+  const id = job.id;
+  return h("div", { class: "progress", role: "status", "data-state": "analysing" }, h("span", null, `${job.label}. This can take a minute.`), h("div", { class: "track" }, h("div", { class: "fill indeterminate" })), h("button", {
+    type: "button",
+    class: "btn small",
+    onclick: () => void call("cancel", { job: id }).catch(() => {
+      return;
+    })
+  }, "Cancel"));
+}
+function synthesisBox(v, where) {
+  const s = v.synthesis;
+  if (s === null || v.state !== "read")
+    return null;
+  const lyrics = s.song.lyrics.split(`
+`).slice(0, 3).join(" / ");
+  return h("div", { class: "synthesis", "data-part": "synthesis" }, h("h4", null, "What the material suggests"), line("Song", s.song.brief), line("Mood and genre", joined(s.song.mood, s.song.genre)), line("Tempo and key", joined(s.song.tempo === null ? "" : `${s.song.tempo} BPM`, s.song.key)), line("Story", s.song.story), line(`Draft lyrics${s.song.language === "" ? "" : ` (${s.song.language})`}`, lyrics === "" ? null : `${lyrics} …`), where === "treatment" ? h("div", null, line("Concept", s.video.concept), line("Look", s.video.look), line("Cast", s.video.cast.map((each) => `${each.name} (${each.source})`).join(", "))) : null);
+}
+function stateNotes(v, running) {
+  return [
+    v.state === "none" ? h("p", { class: "empty", "data-state": "no-sources" }, "No source material in this project. Add pictures or videos and Gemini reads them.") : null,
+    v.state === "unread" && !running ? h("p", { class: "meta", "data-state": "unread" }, "Added, not read yet. Reading costs a few cents; you confirm first.") : null,
+    v.ffmpeg !== null && !v.ffmpeg.ok ? h("div", { class: "notice warn", role: "alert", "data-state": "no-ffmpeg" }, icon("alert"), h("div", { class: "notice-body" }, v.ffmpeg.message)) : null,
+    v.state === "failed" && v.error !== null ? h("div", { class: "notice error", role: "alert", "data-state": "failed" }, icon("alert"), h("div", { class: "notice-body" }, `Reading the source material failed: ${v.error}`)) : null
+  ];
+}
+var READ_LABEL = {
+  none: "",
+  failed: "Try again",
+  unread: "Read the source material",
+  read: "Read again"
+};
+function actionRow(v, where, blocked, on) {
+  if (v.state === "none")
+    return null;
+  const noKey = !v.geminiKey;
+  const readLabel = READ_LABEL[v.state];
+  const showRead = v.state !== "read" || where === "treatment";
+  return h("div", { class: "actions" }, showRead ? h("button", {
+    type: "button",
+    class: `btn${v.state === "read" ? "" : " primary"}`,
+    id: `${where}-source-read`,
+    disabled: blocked || noKey,
+    onclick: on.read
+  }, readLabel) : null, where === "treatment" && v.state === "read" ? h("button", {
+    type: "button",
+    class: "btn primary",
+    id: "treatment-from-sources",
+    disabled: blocked,
+    onclick: on.fill
+  }, "Fill the treatment from this") : null, noKey ? h("p", { class: "why", role: "status" }, keyHint) : null);
+}
+function endMessage(ended) {
+  if (ended.status === "failed")
+    return { tone: "error", text: ended.error ?? "Reading the source material failed." };
+  if (ended.status === "cancelled")
+    return { tone: "info", text: "Cancelled. What was read is kept." };
+  return null;
+}
+function refused(answer) {
+  return answer.reason === "cancelled" ? { tone: "info", text: "Cancelled. Nothing was read and nothing was spent." } : { tone: "warn", text: answer.message };
+}
+async function stageFile(file) {
+  if (file.size > MAX_UPLOAD_BYTES)
+    return {
+      message: {
+        tone: "warn",
+        text: `${file.name} is over ${Math.round(MAX_UPLOAD_BYTES / 1048576)} MB. Type its full path in the box instead.`
+      }
+    };
+  try {
+    const answer = await call("sources-stage", { name: file.name, base64: toBase64(new Uint8Array(await file.arrayBuffer())) });
+    return answer.ok ? { path: answer.path } : { message: { tone: "warn", text: answer.message } };
+  } catch (caught) {
+    return { message: { tone: "error", text: errorText(caught) } };
+  }
+}
+
+// panel/src/sources.ts
 var POLL_MS4 = 1500;
+var NO_SOURCES = "No source material. Add pictures or phone videos (or a folder of them) and the sketches start from what is in them: the mood, the text on screen, a video's sound, tempo and key.";
+
+class SourcesBlock {
+  root;
+  options;
+  body = h("div", { class: "sources-body" });
+  fileInput = h("input", {
+    type: "file",
+    multiple: true,
+    accept: "image/png,image/jpeg,image/webp,video/*,.mov,.mkv",
+    hidden: true
+  });
+  pathInput = h("input", {
+    type: "text",
+    name: "source-path",
+    placeholder: "Or the full path of a file or a folder",
+    "aria-label": "Path of a source file or folder"
+  });
+  addButton;
+  pathButton;
+  view = null;
+  loadedFor = null;
+  loadError = null;
+  message = null;
+  confirming = false;
+  job = null;
+  adding = false;
+  timer = null;
+  constructor(options) {
+    this.options = options;
+    this.addButton = h("button", {
+      type: "button",
+      class: "btn",
+      id: `${options.where}-source-add`,
+      onclick: () => this.fileInput.click()
+    }, "Add source material");
+    this.pathButton = h("button", { type: "button", class: "btn small", onclick: () => void this.addPath() }, "Add path");
+    this.root = h("section", { class: "sources", "data-part": "sources" }, h("h3", null, "Source material"), this.body, h("div", { class: "cast-add" }, this.addButton, this.fileInput, this.pathInput, this.pathButton));
+    this.fileInput.addEventListener("change", () => {
+      const files = [...this.fileInput.files ?? []];
+      this.fileInput.value = "";
+      this.addFiles(files);
+    });
+    this.pathInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter")
+        this.addPath();
+    });
+  }
+  running() {
+    return this.confirming || this.job?.status === "running" || this.view?.running != null;
+  }
+  async load() {
+    const current = app.project;
+    if (current === null)
+      return;
+    this.loadedFor = current.id;
+    try {
+      const view = await call(`sources?project=${encodeURIComponent(current.id)}`);
+      this.view = view;
+      this.loadError = null;
+      if (view.running !== null && this.job === null) {
+        this.job = view.running;
+        this.poll(view.running.id);
+      }
+    } catch (caught) {
+      this.view = null;
+      this.loadError = errorText(caught);
+    }
+    this.options.redraw();
+  }
+  async poll(id) {
+    try {
+      const job = await call(`job?id=${encodeURIComponent(id)}`);
+      this.job = job;
+      if (job.status === "running") {
+        this.timer = setTimeout(() => void this.poll(id), POLL_MS4);
+      } else {
+        this.message = endMessage(job);
+        this.job = null;
+        await this.load();
+        this.options.changed?.();
+        return;
+      }
+    } catch (caught) {
+      this.message = { tone: "error", text: errorText(caught) };
+      this.job = null;
+    }
+    this.options.redraw();
+  }
+  async analyse(add) {
+    const current = app.project;
+    if (current === null)
+      return;
+    this.message = null;
+    this.confirming = true;
+    this.options.redraw();
+    try {
+      const answer = await call("sources-analyse", { project: current.id, add });
+      this.confirming = false;
+      if (answer.ok) {
+        this.job = answer.job;
+        this.poll(answer.job.id);
+      } else
+        this.message = refused(answer);
+    } catch (caught) {
+      this.confirming = false;
+      this.message = { tone: "error", text: errorText(caught) };
+    }
+    this.options.redraw();
+  }
+  async take(paths) {
+    if (paths.length === 0)
+      return;
+    if (app.project === null) {
+      for (const path of paths)
+        if (!app.sources.includes(path))
+          app.sources.push(path);
+      this.options.redraw();
+      return;
+    }
+    await this.analyse(paths);
+  }
+  async addPath() {
+    const path = this.pathInput.value.trim();
+    if (path === "")
+      return;
+    this.pathInput.value = "";
+    await this.take([path]);
+  }
+  async addFiles(files) {
+    this.message = null;
+    this.adding = true;
+    this.options.redraw();
+    const paths = [];
+    for (const file of files) {
+      const staged = await stageFile(file);
+      if ("path" in staged)
+        paths.push(staged.path);
+      else
+        this.message = staged.message;
+    }
+    this.adding = false;
+    await this.take(paths);
+    this.options.redraw();
+  }
+  async useForTreatment() {
+    const current = app.project;
+    if (current === null)
+      return;
+    try {
+      const answer = await call("treatment-from-sources", { project: current.id });
+      this.message = answer.ok ? { tone: "info", text: "The concept, look, cast and references are filled in below." } : { tone: "warn", text: answer.message };
+      this.options.changed?.();
+    } catch (caught) {
+      this.message = { tone: "error", text: errorText(caught) };
+    }
+    this.options.redraw();
+  }
+  projectContent(current, v) {
+    return [
+      ...stateNotes(v, this.running()),
+      h("div", { class: "source-grid" }, ...v.items.map((each) => tile(current, each))),
+      ...v.notes.map((each) => h("p", { class: "meta", "data-part": "note" }, each)),
+      synthesisBox(v, this.options.where),
+      actionRow(v, this.options.where, this.running() || this.adding, {
+        read: () => void this.analyse([]),
+        fill: () => void this.useForTreatment()
+      })
+    ];
+  }
+  content() {
+    const current = app.project;
+    if (current === null) {
+      if (app.sources.length === 0)
+        return [h("p", { class: "empty", "data-state": "no-sources" }, NO_SOURCES)];
+      return [
+        stagedList(app.sources, (path) => {
+          app.sources = app.sources.filter((each) => each !== path);
+          this.options.redraw();
+        })
+      ];
+    }
+    if (this.view === null)
+      return [
+        h("p", { class: "meta", role: "status" }, this.loadError ?? "Loading the source material…")
+      ];
+    return this.projectContent(current.id, this.view);
+  }
+  update() {
+    const current = app.project;
+    if (current === null) {
+      this.loadedFor = null;
+      this.view = null;
+    } else if (this.loadedFor !== current.id) {
+      this.view = null;
+      this.job = null;
+      this.load();
+    }
+    fill(this.body, progressRow(this.confirming, this.job), noticeRow(this.message), ...this.content());
+    const blocked = this.running() || this.adding;
+    this.addButton.disabled = blocked;
+    this.pathButton.disabled = blocked;
+    this.pathInput.disabled = blocked;
+  }
+  sync() {
+    if (this.timer !== null)
+      clearTimeout(this.timer);
+    this.loadedFor = null;
+    this.message = null;
+    this.update();
+  }
+}
+var mountSources = (options) => new SourcesBlock(options);
+
+// panel/src/idea.ts
+var POLL_MS5 = 1500;
 var timer2 = null;
 var cancelling = false;
 function blocker4() {
@@ -1833,9 +2179,9 @@ function blocker4() {
     return app.statusError === null ? "Loading your keys…" : "Cannot reach the extension.";
   if (app.confirming || app.job?.status === "running")
     return "A run is in progress.";
-  if (app.draft.text.trim() === "")
-    return "Write a brief first.";
-  if (app.draft.vocals === "mine" && app.draft.lyrics.trim() === "")
+  if (app.draft.text.trim() === "" && app.sources.length === 0)
+    return "Write a brief first, or add source material.";
+  if (app.draft.vocals === "mine" && app.draft.lyrics.trim() === "" && app.sources.length === 0)
     return "Paste your lyrics, or pick another vocals option.";
   if (app.draft.engine === "elevenlabs") {
     if (!status.elevenlabs.keySet)
@@ -1877,7 +2223,7 @@ async function poll3() {
     else
       app.project = null;
     if (job.status === "running")
-      timer2 = setTimeout(() => void poll3(), POLL_MS4);
+      timer2 = setTimeout(() => void poll3(), POLL_MS5);
     else {
       cancelling = false;
       ended3(job);
@@ -1901,9 +2247,10 @@ async function sketch() {
   app.confirming = true;
   redraw("idea");
   try {
-    const answer = await call("sketch", app.draft);
+    const answer = await call("sketch", { ...app.draft, sources: app.sources });
     app.confirming = false;
     if (answer.ok) {
+      app.sources = [];
       app.job = answer.job;
       startPolling();
       return;
@@ -1957,21 +2304,24 @@ function mountIdea() {
   const why = h("p", { class: "why", role: "status" });
   const cost = h("p", { class: "cost" });
   const form = buildForm(() => update());
+  const sources = mountSources({ where: "idea", redraw: () => redraw("idea") });
   function update() {
     const reason = blocker4();
     button.disabled = reason !== null;
     why.textContent = reason ?? "";
     cost.textContent = app.draft.engine === "elevenlabs" ? "Billed by ElevenLabs to your plan. You confirm first." : "Billed to your Gemini key. You confirm first.";
     fill(messages, ...notices());
+    sources.update();
     fill(side, renderSketches(() => void cancel2(), cancelling));
   }
-  const root = h("div", { class: "idea", "data-stage": "idea" }, h("section", { class: "main" }, h("h2", null, "Idea"), messages, form.root, h("div", { class: "actions" }, button, cost), why), side);
+  const root = h("div", { class: "idea", "data-stage": "idea" }, h("section", { class: "main" }, h("h2", null, "Idea"), messages, form.root, sources.root, h("div", { class: "actions" }, button, cost), why), side);
   update();
   return {
     root,
     update,
     sync: () => {
       form.sync();
+      sources.sync();
       update();
     }
   };
@@ -3272,7 +3622,7 @@ function buttons5() {
   fill(banner5, icon("alert"), h("div", { class: "notice-body" }, h("strong", null, "Preparing needs ffmpeg. "), view?.ffmpeg.message ?? ""));
   stale.textContent = view?.stale === true ? `There is a newer ${view.source?.label ?? "file"} than the one analysed. Analyse again to use it.` : "";
 }
-function tile(label, value, sub = "") {
+function tile2(label, value, sub = "") {
   return h("div", { class: "fact" }, h("span", { class: "field-label" }, label), h("span", { class: "big-number" }, value), h("span", { class: "meta" }, sub));
 }
 function bpmSource() {
@@ -3288,7 +3638,7 @@ function drawFacts2() {
   const found = prep();
   const analysis = found?.analysis;
   const grid = found?.grid ?? null;
-  fill(facts2, tile("BPM", orDash(grid?.bpm, String), bpmSource()), tile("Key", analysis?.key?.camelot ?? "—", analysis?.key?.name ?? ""), tile("First beat", orDash(grid?.firstBeatSec, (sec) => `${sec.toFixed(3)} s`)), tile("Energy", orDash(analysis?.energy, (energy) => `${energy} / 10`)), tile("Loudness", orDash(analysis?.lufs, (lufs) => `${lufs.toFixed(1)} LUFS`), orDash(analysis?.truePeak, (peak) => `peak ${peak.toFixed(1)} dBTP`).replace("—", "")));
+  fill(facts2, tile2("BPM", orDash(grid?.bpm, String), bpmSource()), tile2("Key", analysis?.key?.camelot ?? "—", analysis?.key?.name ?? ""), tile2("First beat", orDash(grid?.firstBeatSec, (sec) => `${sec.toFixed(3)} s`)), tile2("Energy", orDash(analysis?.energy, (energy) => `${energy} / 10`)), tile2("Loudness", orDash(analysis?.lufs, (lufs) => `${lufs.toFixed(1)} LUFS`), orDash(analysis?.truePeak, (peak) => `peak ${peak.toFixed(1)} dBTP`).replace("—", "")));
   tempoNote.textContent = found !== null && grid === null ? "No clear tempo was found in this track, so there is no grid. Type a BPM below to make one." : "";
   editNote.textContent = ps.message ?? "";
   if (grid !== null && document.activeElement !== bpmInput)
@@ -4018,6 +4368,12 @@ var castPrompt = h("input", {
 var drawButton2 = h("button", { type: "button", class: "btn primary", id: "cast-draw", onclick: () => void draw5() }, icon("spark"), "Draw a cast picture");
 var drawWhy = h("p", { class: "why", role: "status" });
 var workSlot5 = h("div", { class: "work-slot" });
+var sources = mountSources({
+  where: "treatment",
+  redraw: () => redraw("stage"),
+  changed: () => void load10()
+});
+var referencesBox = h("div", { class: "references", "data-part": "references" });
 async function load10() {
   const project = app.project;
   if (project === null)
@@ -4121,7 +4477,7 @@ async function draw5() {
     await load10();
   });
 }
-function tile2(project, each) {
+function tile3(project, each) {
   return h("div", { class: "cast-tile", "data-cast": each.id }, picture(project, "cast", each.id, each.id, each.name === "" ? "Cast picture" : each.name), h("span", { class: "card-title" }, each.name === "" ? "Unnamed" : each.name), h("span", { class: "meta" }, each.source === "generated" ? "Drawn from a prompt" : "From a file"), h("button", {
     type: "button",
     class: "btn small",
@@ -4133,7 +4489,11 @@ function tile2(project, each) {
 function drawCast() {
   const project = app.project;
   const cast = view9?.treatment.cast ?? [];
-  fill(castBox, cast.length === 0 || project === null ? h("p", { class: "empty", "data-state": "no-cast" }, "No cast yet. Pictures keep a character looking the same in every shot; the video works without any.") : h("div", { class: "cast-grid" }, ...cast.map((each) => tile2(project.id, each))));
+  fill(castBox, cast.length === 0 || project === null ? h("p", { class: "empty", "data-state": "no-cast" }, "No cast yet. Pictures keep a character looking the same in every shot; the video works without any.") : h("div", { class: "cast-grid" }, ...cast.map((each) => tile3(project.id, each))));
+}
+function drawReferences() {
+  const references = view9?.treatment.references ?? [];
+  fill(referencesBox, references.length === 0 ? null : h("div", null, h("h3", null, "Shot references"), h("ul", null, ...references.map((each) => h("li", { "data-reference": each.id }, `${each.name}${each.note === "" ? "" : `: ${each.note}`}`)))));
 }
 function drawBlocker2() {
   if (view9 === null)
@@ -4168,6 +4528,8 @@ function update11() {
   fill(moneySlot3, moneyLine(view9?.money ?? null));
   fill(workSlot5, renderWork());
   setForm();
+  sources.update();
+  drawReferences();
   if (redrawCast) {
     redrawCast = false;
     drawCast();
@@ -4194,7 +4556,7 @@ function wire() {
 }
 function mountTreatment() {
   wire();
-  const root = h("div", { class: "stage treatment", "data-stage": "treatment" }, h("section", { class: "main wide" }, heading10, why9, moneySlot3, h("label", { class: "field" }, h("span", { class: "field-label" }, "Concept"), concept), h("label", { class: "field" }, h("span", { class: "field-label" }, "Look"), look), h("div", { class: "format-row", "data-part": "format" }, h("span", { class: "field-label" }, "Format"), h("span", { class: "chip on static" }, "16:9"), h("label", { class: "seg" }, vertical, "Also a 9:16 vertical cut"), h("span", { class: "field-label" }, "Shot length"), ...barRadios.map((radio, at) => h("label", { class: "seg" }, radio, `${SHOT_BARS[at]} bars`)), h("span", { class: "field-label" }, "Budget"), h("label", { class: "seg" }, "$", budget)), h("div", { class: "actions" }, save3, saveWhy), h("h3", null, "Cast"), castBox, h("div", { class: "cast-add" }, addButton, fileInput, drop), h("div", { class: "sfx-form" }, h("label", { class: "field narrow" }, h("span", { class: "field-label" }, "Name"), castName), h("label", { class: "field grow" }, h("span", { class: "field-label" }, "Prompt"), castPrompt), drawButton2), drawWhy, workSlot5));
+  const root = h("div", { class: "stage treatment", "data-stage": "treatment" }, h("section", { class: "main wide" }, heading10, why9, moneySlot3, h("label", { class: "field" }, h("span", { class: "field-label" }, "Concept"), concept), h("label", { class: "field" }, h("span", { class: "field-label" }, "Look"), look), h("div", { class: "format-row", "data-part": "format" }, h("span", { class: "field-label" }, "Format"), h("span", { class: "chip on static" }, "16:9"), h("label", { class: "seg" }, vertical, "Also a 9:16 vertical cut"), h("span", { class: "field-label" }, "Shot length"), ...barRadios.map((radio, at) => h("label", { class: "seg" }, radio, `${SHOT_BARS[at]} bars`)), h("span", { class: "field-label" }, "Budget"), h("label", { class: "seg" }, "$", budget)), h("div", { class: "actions" }, save3, saveWhy), sources.root, h("h3", null, "Cast"), castBox, h("div", { class: "cast-add" }, addButton, fileInput, drop), h("div", { class: "sfx-form" }, h("label", { class: "field narrow" }, h("span", { class: "field-label" }, "Name"), castName), h("label", { class: "field grow" }, h("span", { class: "field-label" }, "Prompt"), castPrompt), drawButton2), drawWhy, referencesBox, workSlot5));
   return {
     root,
     update: update11,
@@ -4202,6 +4564,7 @@ function mountTreatment() {
       if (loadedFor9 !== app.project?.id)
         view9 = null;
       load10();
+      sources.sync();
       reattach(["cast"], load10, async () => "");
       update11();
     }

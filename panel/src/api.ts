@@ -17,6 +17,8 @@ export type {
   ShootView,
   ShotView,
   SlotView,
+  SourceItem,
+  SourcesView,
   StoryboardView,
   TakeView,
   TreatmentView,

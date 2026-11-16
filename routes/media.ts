@@ -18,6 +18,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { masters } from "../project/master";
+import { readSources } from "../project/sources";
 import { layers, mixes, readStems, versions } from "../project/stage";
 import { imageMime, readShots, readTreatment } from "../project/video";
 import { readRenders, readTakes } from "../project/video-media";
@@ -83,6 +84,13 @@ async function fileOf(
       return (await readTreatment(dir)).cast.find((each) => each.id === id)?.file ?? null;
     case "frame":
       return (await readShots(dir))?.shots.find((each) => each.id === id)?.frame ?? null;
+    case "source":
+      return (await readSources(dir)).sources.find((each) => each.id === id)?.thumb ?? null;
+    case "sourceframe": {
+      const [sourceId, at] = id.split(".");
+      const found = (await readSources(dir)).sources.find((each) => each.id === sourceId);
+      return found?.frames[Number(at)] ?? null;
+    }
     case "take":
     case "preview":
       return await videoFile(studio, dir, kind, id);

@@ -14,6 +14,9 @@ import type { IndexEntry } from "./project/store";
 import { readShots, readTreatment, writeTreatment } from "./project/video";
 import { applyTreatment } from "./routes/treatment";
 import { tempoOf } from "./routes/video-common";
+import { pathsOf } from "./sources/files";
+import { startSources } from "./sources/run";
+import { describeFilled, fillTreatment } from "./sources/treatment";
 import { projectOf } from "./stage-tools";
 import type { Studio } from "./studio";
 import { addCastFile, readPictureFile } from "./video/cast";
@@ -29,7 +32,7 @@ export function treatmentTool(studio: Studio): Tool {
   return {
     name: "video_treatment",
     description:
-      "Reads or sets a project's music-video treatment: the concept, the look, whether a 9:16 vertical cut is wanted, the shot length rule (2, 4 or 8 bars) and the dollar budget; adds cast pictures from files (up to 6, free) or draws one from a prompt (costs money, so the reader confirms the dollars on a card first; when they cancel, nothing is made and the tool says so). The treatment is kept in the project's video/treatment.json and the pictures in video/cast/. Needs the song to be prepared first (a tempo). Returns the treatment and the file paths.",
+      "Reads or sets a project's music-video treatment: the concept, the look, whether a 9:16 vertical cut is wanted, the shot length rule (2, 4 or 8 bars) and the dollar budget; adds cast pictures from files (up to 6, free) or draws one from a prompt (costs money, so the reader confirms the dollars on a card first; when they cancel, nothing is made and the tool says so). The treatment is kept in the project's video/treatment.json and the pictures in video/cast/. Pass the pictures and videos the reader shared (a photo album, phone clips) as `sources`: Gemini reads them and fills the concept and look (where you gave none) and the cast (pictures picked from the sources, up to 6), and keeps the videos as shot references; reading costs a few cents, so the reader confirms it on a card first, and sources already read for music_sketch cost nothing. Needs the song to be prepared first (a tempo). Returns the treatment and the file paths.",
     inputSchema: {
       type: "object",
       properties: {
@@ -54,6 +57,12 @@ export function treatmentTool(studio: Studio): Tool {
           required: ["prompt"],
         },
         removeCast: { type: "string", description: "The id of a cast picture to remove." },
+        sources: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Full paths of pictures and videos the video starts from, or of a folder holding them (up to 24 files). Fills the concept, look and cast from them, and keeps the videos as shot references.",
+        },
       },
       additionalProperties: false,
     },
@@ -64,10 +73,29 @@ export function treatmentTool(studio: Studio): Tool {
       if ((await tempoOf(dir)) === null) return `Not done: ${NO_TEMPO}`;
       const problem = await changeTreatment(dir, args);
       if (problem !== null) return `Not done: ${problem}`;
+      const read = await readSourcesStep(studio, entry, args, ctx.signal);
+      if (typeof read === "object" && read !== null) return read.text;
       const drawn = await drawCast(studio, entry, args["castDraw"], ctx.signal);
-      return drawn ?? (await describeTreatment(studio, entry));
+      return drawn ?? (await describeTreatment(studio, entry, read));
     },
   };
+}
+
+/** Reads the call's `sources` into the treatment: the sentence for what was filled, null with none, or `{ text }` when it cannot go on. */
+async function readSourcesStep(
+  studio: Studio,
+  entry: IndexEntry,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<string | null | { text: string }> {
+  if (pathsOf(args["sources"]).length === 0) return null;
+  const done = await outcomeOf(await startSources(studio, entry, args["sources"], signal));
+  if ("text" in done) return done;
+  const filled = await fillTreatment(studio.store().pathOf(entry), {
+    concept: typeof args["concept"] === "string" && args["concept"].trim() !== "",
+    look: typeof args["look"] === "string" && args["look"].trim() !== "",
+  });
+  return typeof filled === "string" ? { text: `Not done: ${filled}` } : describeFilled(filled);
 }
 
 /** Draws the cast picture a call asks for; the sentence for the session when it did not go well, else null. */
@@ -108,16 +136,25 @@ async function changeTreatment(dir: string, args: Record<string, unknown>): Prom
   return await addFiles(dir, args["castFiles"]);
 }
 
-async function describeTreatment(studio: Studio, entry: IndexEntry): Promise<string> {
+async function describeTreatment(
+  studio: Studio,
+  entry: IndexEntry,
+  filled: string | null = null,
+): Promise<string> {
   const dir = studio.store().pathOf(entry);
   const t = await readTreatment(dir);
   return [
+    ...(filled === null ? [] : [filled]),
     `Treatment of "${entry.title}" (${entry.id}): ${join(dir, "video", "treatment.json")}`,
     `Concept: ${t.concept === "" ? "(none)" : t.concept}`,
     `Look: ${t.look === "" ? "(none)" : t.look}`,
     `Vertical cut: ${t.vertical ? "yes" : "no"}; shots of ${t.shotBars} bars.`,
     await budgetLine(studio, dir),
     ...t.cast.map((each) => `- cast ${each.id} ${each.name}: ${join(dir, each.file)}`),
+    ...t.references.map(
+      (each) =>
+        `- shot reference ${each.id} ${each.name}${each.note === "" ? "" : `: ${each.note}`}`,
+    ),
   ].join("\n");
 }
 

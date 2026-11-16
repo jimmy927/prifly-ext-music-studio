@@ -27,6 +27,11 @@ async function viewOf(studio: Parameters<Handler>[0], projectId: unknown): Promi
         prompt: each.prompt,
         source: each.source,
       })),
+      references: treatment.references.map((each) => ({
+        id: each.id,
+        name: each.name,
+        note: each.note,
+      })),
     },
     money: await moneyOf(studio, dir, treatment),
     prices: {

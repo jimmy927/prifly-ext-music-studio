@@ -9,6 +9,7 @@
 import { MAX_CAST, SHOT_BARS } from "../../video/constants";
 import { call, errorText, type TreatmentView } from "./api";
 import { fill, h, icon } from "./dom";
+import { mountSources } from "./sources";
 import { app, redraw } from "./state";
 import { keyHint, moneyLine, picture, reattach, usd } from "./video";
 import { busy, renderWork, startWork } from "./work";
@@ -90,6 +91,12 @@ const drawButton = h(
 );
 const drawWhy = h("p", { class: "why", role: "status" });
 const workSlot = h("div", { class: "work-slot" });
+const sources = mountSources({
+  where: "treatment",
+  redraw: () => redraw("stage"),
+  changed: () => void load(),
+});
+const referencesBox = h("div", { class: "references", "data-part": "references" });
 
 async function load(): Promise<void> {
   const project = app.project;
@@ -240,6 +247,31 @@ function drawCast(): void {
   );
 }
 
+function drawReferences(): void {
+  const references = view?.treatment.references ?? [];
+  fill(
+    referencesBox,
+    references.length === 0
+      ? null
+      : h(
+          "div",
+          null,
+          h("h3", null, "Shot references"),
+          h(
+            "ul",
+            null,
+            ...references.map((each) =>
+              h(
+                "li",
+                { "data-reference": each.id },
+                `${each.name}${each.note === "" ? "" : `: ${each.note}`}`,
+              ),
+            ),
+          ),
+        ),
+  );
+}
+
 /** Why drawing a cast picture is off, or null. */
 function drawBlocker(): string | null {
   if (view === null) return loadError ?? "Loading…";
@@ -273,6 +305,8 @@ function update(): void {
   fill(moneySlot, moneyLine(view?.money ?? null));
   fill(workSlot, renderWork());
   setForm();
+  sources.update();
+  drawReferences();
   if (redrawCast) {
     redrawCast = false;
     drawCast();
@@ -324,6 +358,7 @@ export function mountTreatment(): { root: HTMLElement; update: () => void; sync:
         h("label", { class: "seg" }, "$", budget),
       ),
       h("div", { class: "actions" }, save, saveWhy),
+      sources.root,
       h("h3", null, "Cast"),
       castBox,
       h("div", { class: "cast-add" }, addButton, fileInput, drop),
@@ -345,6 +380,7 @@ export function mountTreatment(): { root: HTMLElement; update: () => void; sync:
         drawButton,
       ),
       drawWhy,
+      referencesBox,
       workSlot,
     ),
   );
@@ -354,6 +390,7 @@ export function mountTreatment(): { root: HTMLElement; update: () => void; sync:
     sync: () => {
       if (loadedFor !== app.project?.id) view = null;
       void load();
+      sources.sync();
       void reattach(["cast"], load, async () => "");
       update();
     },

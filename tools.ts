@@ -61,11 +61,21 @@ export function sketchTool(studio: Studio): ExtensionTool {
   return {
     name: "music_sketch",
     description:
-      "Makes three 30-second sketches of a song idea with ElevenLabs Music v2.5 or Lyria 3 Clip, saves them in the Music Studio library and returns their file paths. It costs money, so the reader confirms the cost on a card first; when they cancel, nothing is made and the tool says so. A run takes a minute or more.",
+      "Makes three 30-second sketches of a song idea with ElevenLabs Music v2.5 or Lyria 3 Clip, saves them in the Music Studio library and returns their file paths. When the reader shares pictures or videos for the song (a photo album, phone clips), pass them as `sources`: Gemini reads them (what is in them, their text, a video's sound, tempo and key) and the brief, lyrics, tempo and key come from that; anything you also pass (brief, tempo, key, lyrics) wins over it. It costs money, so the reader confirms the cost on one card first (reading the sources included); when they cancel, nothing is made and the tool says so. A run takes a minute or more.",
     inputSchema: {
       type: "object",
       properties: {
-        brief: { type: "string", description: "What the music is: mood, instruments, use." },
+        brief: {
+          type: "string",
+          description:
+            "What the music is: mood, instruments, use. Optional when `sources` is given: it is then written from them.",
+        },
+        sources: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Full paths of pictures (PNG, JPEG, WebP) and videos (MP4, MOV, M4V, WebM, MKV, AVI) the song starts from, or of a folder holding them (up to 24 files are read). The same files can be given to video_treatment; what was read is kept, so that costs nothing more.",
+        },
         preset: {
           type: "string",
           enum: PRESETS.map((each) => each.id),
@@ -93,7 +103,6 @@ export function sketchTool(studio: Studio): ExtensionTool {
           description: "Also copy the MP3 files into this session's scratchpad.",
         },
       },
-      required: ["brief"],
       additionalProperties: false,
     },
     call: async (args, ctx) => {

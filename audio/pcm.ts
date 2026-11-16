@@ -5,14 +5,14 @@ import { SAMPLE_RATE } from "./fft";
 /** The longest stretch analysed, from the start of the file. */
 export const MAX_ANALYSED_SEC = 600;
 
-export const decodeArgv = (file: string): string[] => [
+export const decodeArgv = (file: string, maxSec = MAX_ANALYSED_SEC): string[] => [
   "-v",
   "error",
   "-nostdin",
   "-i",
   file,
   "-t",
-  String(MAX_ANALYSED_SEC),
+  String(maxSec),
   "-ac",
   "1",
   "-ar",
