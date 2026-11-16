@@ -12,7 +12,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
-    "@prifly/extension-api": "git+ssh://git@github.com/jimmy927/prifly-extension-api.git#0cb42a605584c56057982dd3388bf8e96dbc06b7",
+    "@prifly/extension-api": "git+ssh://git@github.com/jimmy927/prifly-extension-api.git#cc8a2f20f1b64c6fe1a519909a38ecdb5ed9c1a1",
     "@types/bun": "^1.1.14",
     "typescript": "^7.0.2"
   }

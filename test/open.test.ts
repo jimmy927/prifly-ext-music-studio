@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { activate, choices, launch, launched, panel } from "../index";
+import { action, activate, choices, launch, launched, panel } from "../index";
 import {
   briefText,
   LAUNCH_KEY,
@@ -26,7 +26,13 @@ afterEach(() => {
 });
 
 /** The extension as prifly runs it: activated on a fake api with an empty library. */
-function running(options: { views?: boolean; openSession?: boolean } = {}) {
+function running(
+  options: {
+    views?: boolean;
+    openSession?: boolean;
+    click?: boolean | { startFails: string };
+  } = {},
+) {
   const folder = mkdtempSync(join(tmpdir(), "music-studio-open-"));
   const fake = fakeApi({ settings: { libraryFolder: folder }, ...options });
   const stop = activate(fake.api);
@@ -298,6 +304,95 @@ test("on a prifly without state the click fails with a message and starts nothin
     delete (fake.api as { state?: unknown }).state;
     await expect(click()).rejects.toThrow("This prifly keeps no state. Update prifly.");
     expect(fake.viewShown).toEqual([]);
+  } finally {
+    stop();
+  }
+});
+
+const clicked = () => action("music-studio", "open");
+
+test("with the click calls the status bar item carries a click and names the opener panel", () => {
+  const { fake, stop } = running({ views: true, click: true });
+  try {
+    expect(fake.shown.at(-1)).toEqual({
+      bySession: {},
+      statusBar: [expect.objectContaining({ key: "music-studio", panel: "open", click: "open" })],
+    });
+  } finally {
+    stop();
+  }
+});
+
+test("without the click calls nothing is shown and the opener panel stays the click", async () => {
+  for (const missing of [{}, { views: true, openSession: true }]) {
+    const { fake, stop } = running(missing);
+    try {
+      expect(fake.shown).toEqual([]);
+      expect(await click()).toMatchObject({ action: "launch" });
+      await expect(clicked()).rejects.toThrow("cannot open a session from a click");
+      expect(fake.startedSessions).toEqual([]);
+      expect(fake.openedSessions).toEqual([]);
+    } finally {
+      stop();
+    }
+  }
+});
+
+test("the click starts a session with the studio brief when there is none, and shows the Library", async () => {
+  const { fake, folder, stop } = running({ views: true, click: true });
+  try {
+    expect(await clicked()).toBe("");
+    expect(fake.startedSessions).toEqual([
+      { prompt: briefText(true), cwd: folder, title: "Music Studio" },
+    ]);
+    expect(fake.viewShown).toEqual([{ sessionId: "started-1", viewId: "studio-view", params: {} }]);
+    expect(fake.openedSessions).toEqual([]);
+    // The second click finds it: nothing new starts, the session comes forward.
+    expect(await clicked()).toBe("");
+    expect(fake.startedSessions).toHaveLength(1);
+    expect(fake.openedSessions).toEqual(["started-1"]);
+    expect(fake.viewShown).toHaveLength(2);
+  } finally {
+    stop();
+  }
+});
+
+test("the click brings the existing session forward with the studio shown, never an archived one", async () => {
+  const { fake, folder, stop } = running({ views: true, click: true });
+  try {
+    fake.knownSessions.set("old", { title: "Studio", cwd: folder });
+    fake.knownSessions.set("gone", { title: "Studio", cwd: folder, archived: true });
+    await launched("studio", "session", "old");
+    await Bun.sleep(2);
+    await launched("studio", "session", "gone");
+    fake.viewShown.length = 0;
+    await clicked();
+    expect(fake.openedSessions).toEqual(["old"]);
+    expect(fake.startedSessions).toEqual([]);
+    expect(fake.viewShown).toEqual([{ sessionId: "old", viewId: "studio-view", params: {} }]);
+  } finally {
+    stop();
+  }
+});
+
+test("a start prifly refuses is logged and thrown, and nothing is remembered", async () => {
+  const { fake, stop } = running({ views: true, click: { startFails: "cwd is not a folder" } });
+  try {
+    await expect(clicked()).rejects.toThrow("Could not open Music Studio: cwd is not a folder");
+    expect(fake.logs.some((each) => each.event === "studio-click-failed")).toBe(true);
+    expect(fake.viewShown).toEqual([]);
+    expect(fake.openedSessions).toEqual([]);
+  } finally {
+    stop();
+  }
+});
+
+test("a click on a prifly with no state fails loudly and starts nothing", async () => {
+  const { fake, stop } = running({ views: true, click: true });
+  try {
+    delete (fake.api as { state?: unknown }).state;
+    await expect(clicked()).rejects.toThrow("keeps no state");
+    expect(fake.startedSessions).toEqual([]);
   } finally {
     stop();
   }

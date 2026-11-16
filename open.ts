@@ -1,6 +1,8 @@
 /**
- * The Music Studio lives in a session. prifly's status bar can only open a
- * panel (a dialog), so the manifest's one panel, `open`, is a small page that
+ * The Music Studio lives in a session. Where prifly offers "status-click",
+ * "open-session" and "start-session-plain", a left click on the status bar's
+ * entry runs `clickRoute` with no dialog. On an older prifly the status bar can
+ * only open a panel (a dialog), so the manifest's one panel, `open`, is a small page that
  * asks `api/open` what to do and goes: it lands the reader on their Music
  * Studio session (the most recent one this extension started that is still
  * around) with the studio view shown in its App tab, or starts one through the
@@ -13,7 +15,13 @@
 
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import type { ExtensionSession, Launch, LaunchChoice } from "@prifly/extension-api";
+import type {
+  Decoration,
+  ExtensionApi,
+  ExtensionSession,
+  Launch,
+  LaunchChoice,
+} from "@prifly/extension-api";
 import { resolveLink, sessionOf } from "./session";
 import type { Studio } from "./studio";
 import { showView, viewApi } from "./view";
@@ -21,6 +29,8 @@ import { showView, viewApi } from "./view";
 /** The manifest's launcher, and the one thing it offers. */
 export const LAUNCHER_ID = "studio";
 export const LAUNCH_KEY = "session";
+/** The started session's name in the sidebar. */
+const STUDIO_TITLE = "Music Studio";
 
 type Started = { id: string; at: number };
 type Memory = { sessions: Started[] };
@@ -77,17 +87,21 @@ async function update(studio: Studio, change: (record: Memory) => Memory): Promi
 /** The module's `launch`: the brief, in the library folder. */
 export function launch(studio: Studio): Launch {
   const canShow = viewApi(studio.api()) !== null;
-  return { prompt: briefText(canShow), cwd: startFolder(studio), name: "Music Studio" };
+  return { prompt: briefText(canShow), cwd: startFolder(studio), name: STUDIO_TITLE };
 }
 
-/** The module's `launched`: remembers the session and shows the studio's Library in it. */
-export async function launched(studio: Studio, session: string): Promise<void> {
+async function remember(studio: Studio, session: string): Promise<void> {
   await update(studio, (record) => ({
     sessions: [
       { id: session, at: Date.now() },
       ...record.sessions.filter((each) => each.id !== session),
     ].slice(0, KEEP),
   }));
+}
+
+/** The module's `launched`: remembers the session and shows the studio's Library in it. */
+export async function launched(studio: Studio, session: string): Promise<void> {
+  await remember(studio, session);
   await showView(studio, session, null, null, true);
 }
 
@@ -97,9 +111,76 @@ export async function findSession(studio: Studio): Promise<ExtensionSession | nu
   const record = (await state?.get<Memory>(DOC)) ?? EMPTY;
   for (const each of record.sessions) {
     const known = sessionOf(studio.api(), each.id);
-    if (known !== null && (known as { archived?: boolean }).archived !== true) return known;
+    if (known !== null && known.archived !== true) return known;
   }
   return null;
+}
+
+/** Shows the studio in `session`: on its last project when it has one, else the Library. */
+async function showStudio(studio: Studio, session: string): Promise<void> {
+  const resolved = await resolveLink(studio, session);
+  const project = resolved.state === "following" ? resolved.entry.id : null;
+  await showView(studio, session, project, null, true);
+}
+
+/** The status bar item's key, and the id of its left-click action. */
+export const STATUS_KEY = "music-studio";
+export const CLICK_ACTION = "open";
+/** The manifest's panel the status bar item stands for: the opener, which a right click still opens. */
+export const OPENER_PANEL = "open";
+
+/** Whether this prifly lets a click run extension code that opens or starts a session (no opener dialog). */
+export function canClickThrough(api: ExtensionApi): boolean {
+  const features = api.features ?? [];
+  return ["status-click", "open-session", "start-session-plain"].every((each) =>
+    features.includes(each),
+  );
+}
+
+/** The status bar's Music Studio entry: a left click runs `click`, a right click opens the opener panel. */
+export function statusItem(): Decoration {
+  return {
+    key: STATUS_KEY,
+    icon: "zap",
+    label: "Music Studio",
+    tone: "info",
+    details: ["Go to your Music Studio session, or start one"],
+    panel: OPENER_PANEL,
+    click: CLICK_ACTION,
+  };
+}
+
+/**
+ * The reader's click on the status bar item, with no dialog: reuse the Music
+ * Studio session (`api.openSession`) or start one (`api.startSession`) and show
+ * the studio in it. A failure is logged and thrown, which prifly shows as the
+ * failure of the click.
+ */
+export async function clickRoute(studio: Studio): Promise<string> {
+  const api = studio.api();
+  try {
+    if (!canClickThrough(api) || api.openSession === undefined || api.startSession === undefined)
+      throw new Error("This prifly cannot open a session from a click. Update prifly.");
+    if (api.state === undefined) throw new Error("This prifly keeps no state. Update prifly.");
+    const found = await findSession(studio);
+    if (found !== null) {
+      await showStudio(studio, found.id);
+      api.openSession(found.id);
+      return "";
+    }
+    const started = await api.startSession({
+      prompt: briefText(viewApi(api) !== null),
+      cwd: startFolder(studio),
+      title: STUDIO_TITLE,
+    });
+    await remember(studio, started.sessionId);
+    await showView(studio, started.sessionId, null, null, true);
+    return "";
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : String(caught);
+    api.log("studio-click-failed", { error: message });
+    throw new Error(`Could not open Music Studio: ${message}`);
+  }
 }
 
 /** What the opener page is answered with. */
@@ -129,10 +210,7 @@ export async function openRoute(studio: Studio): Promise<OpenAnswer> {
   };
   const found = await findSession(studio);
   if (found === null) return { ...base, action: "launch", session: null, title: null };
-  // The last project when the session has one, else the Library.
-  const resolved = await resolveLink(studio, found.id);
-  const project = resolved.state === "following" ? resolved.entry.id : null;
-  await showView(studio, found.id, project, null, true);
+  await showStudio(studio, found.id);
   return { ...base, action: "open", session: found.id, title: found.title };
 }
 

@@ -4,10 +4,8 @@
  * `api.showSessionView`, feature "session-views"). `music_open` shows it on
  * a project; the first music or video tool a session calls shows it too.
  *
- * The installed `@prifly/extension-api` does not declare the session view
- * calls yet, so they are declared here and looked up behind the feature check:
- * a prifly without them keeps the tools working, and the Music Studio
- * session's brief says to update prifly (open.ts).
+ * A prifly without session views keeps the tools working, and the Music
+ * Studio session's brief says to update prifly (open.ts).
  */
 
 import type { ExtensionApi, PanelRequest } from "@prifly/extension-api";
@@ -18,13 +16,10 @@ import type { Studio } from "./studio";
 /** The manifest's id for the view; no panel of the extension has it. */
 export const VIEW_ID = "studio-view";
 
-/** What the host adds to a request from a session view. */
-export type ViewRequest = PanelRequest & {
-  sessionId?: string;
-  params?: Record<string, string>;
-};
+/** What the host adds to a request from a session view: `sessionId` and `params`, declared by the api's `PanelRequest`. */
+export type ViewRequest = PanelRequest;
 
-/** The two session view calls of prifly's `api`, as a prifly with "session-views" offers them. */
+/** The session view call of prifly's `api`, as a prifly with "session-views" offers it. */
 export type ViewApi = {
   show(sessionId: string, viewId: string, params: Record<string, string>): void;
 };
@@ -36,12 +31,9 @@ export const OLD_PRIFLY =
 /** The session view calls, or null when this prifly has none. */
 export function viewApi(api: ExtensionApi): ViewApi | null {
   if (!(api.features ?? []).includes("session-views")) return null;
-  const candidate = api as ExtensionApi & {
-    showSessionView?: (sessionId: string, viewId: string, params: Record<string, string>) => void;
-  };
-  const show = candidate.showSessionView;
+  const show = api.showSessionView;
   if (typeof show !== "function") return null;
-  return { show: (sessionId, viewId, params) => show.call(candidate, sessionId, viewId, params) };
+  return { show: (sessionId, viewId, params) => show.call(api, sessionId, viewId, params) };
 }
 
 /** The project a session's view was shown on; "" for the Library. */

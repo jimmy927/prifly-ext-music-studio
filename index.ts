@@ -1,7 +1,7 @@
 /**
  * The Music Studio extension: what prifly imports. `activate` registers the
  * session tools and keeps the status line; `panel` answers the studio view in a
- * session's App tab and the status bar's opener page (open.ts), and `choices`,
+ * session's App tab and the status bar's opener page (open.ts), `action` (the status bar click, no dialog), and `choices`,
  * `launch` and `launched` start the Music Studio session. The ElevenLabs and Gemini keys are `secret` settings, kept in this
  * extension's own sealed secrets, never in prifly's vault.
  */
@@ -9,9 +9,14 @@
 import type { ExtensionApi, Launch, LaunchChoice } from "@prifly/extension-api";
 import { allTools } from "./all-tools";
 import {
+  CLICK_ACTION,
+  canClickThrough,
+  clickRoute,
   choices as launchChoices,
   launch as launchSession,
+  STATUS_KEY,
   launched as sessionLaunched,
+  statusItem,
 } from "./open";
 import { route } from "./panel-router";
 import { Studio } from "./studio";
@@ -45,6 +50,8 @@ export function activate(given: ExtensionApi): () => void {
     // The library folder may have changed.
     studio.serveMedia();
   });
+  // With the click calls, the status bar's Music Studio runs `action` below with no dialog; else the opener panel is the click.
+  if (canClickThrough(given)) given.show?.({}, [statusItem()]);
   given.log("activated");
   return () => {
     studio.streaming = false;
@@ -70,4 +77,11 @@ export function launch(): Launch {
 /** The session a launch became: its studio view is shown on the Library. */
 export function launched(_launchId: string, _key: string, session: string): Promise<void> {
   return sessionLaunched(studio, session);
+}
+
+/** The reader's left click on the status bar's Music Studio: its session forward, or a new one, with no dialog. */
+export function action(key: string, actionId: string): Promise<string> {
+  if (key !== STATUS_KEY || actionId !== CLICK_ACTION)
+    return Promise.reject(new Error(`Music Studio has no action ${actionId} on ${key}`));
+  return clickRoute(studio);
 }

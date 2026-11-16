@@ -32,6 +32,7 @@ import type {
   ExtensionTool,
   ExtensionToolContext,
   LauncherFlag,
+  PlainStart,
   SettingValues,
 } from "@prifly/extension-api";
 
@@ -241,9 +242,30 @@ export type FakeApi = {
   knownSessions: Map<string, { title: string; cwd: string; archived?: boolean }>;
   /** Every `api.showSessionView` call, where the fake offers session views. */
   viewShown: { sessionId: string; viewId: string; params: Record<string, string> }[];
+  /** Every session `api.openSession` was asked to bring forward, where the fake offers the click calls. */
+  openedSessions: string[];
+  /** Every spec `api.startSession` was given, where the fake offers the click calls. */
+  startedSessions: PlainStart[];
   /** Every `api.panelMedia` call, where the fake offers panel media. */
   mediaFolders: { panelId: string; folder: string }[];
 };
+
+/** `openSession` and `startSession`, recorded in `fake`; `startFails` is why a start rejects. */
+function addClickCalls(
+  api: ExtensionApi,
+  fake: Pick<FakeApi, "openedSessions" | "startedSessions" | "knownSessions">,
+  click: true | { startFails: string },
+): void {
+  const fails = click === true ? null : click.startFails;
+  api.openSession = (sessionId) => void fake.openedSessions.push(sessionId);
+  api.startSession = async (spec) => {
+    fake.startedSessions.push(spec);
+    if (fails !== null) throw new Error(fails);
+    const sessionId = `started-${fake.startedSessions.length}`;
+    fake.knownSessions.set(sessionId, { title: spec.title ?? "", cwd: spec.cwd });
+    return { sessionId };
+  };
+}
 
 /**
  * A fake `api`; parts left out of `options` are prifly's quiet defaults.
@@ -270,6 +292,11 @@ export function fakeApi(
     media?: boolean;
     /** Offer "panel-open-session": a panel page may open a session. */
     openSession?: boolean;
+    /**
+     * Offer "status-click", "open-session" and "start-session-plain": `openSession` and
+     * `startSession` are recorded; `startFails` is why `startSession` rejects.
+     */
+    click?: boolean | { startFails: string };
   } = {},
 ): FakeApi {
   let tools: ExtensionTool[] = [];
@@ -291,6 +318,8 @@ export function fakeApi(
     dialogs: [],
     knownSessions: new Map(),
     viewShown: [],
+    openedSessions: [],
+    startedSessions: [],
     mediaFolders: [],
   };
   const api: ExtensionApi = {
@@ -309,6 +338,9 @@ export function fakeApi(
       ...(options.views === true ? ["session-views"] : []),
       ...(options.media === true ? ["panel-media"] : []),
       ...(options.openSession === true ? ["panel-open-session"] : []),
+      ...(options.click === undefined || options.click === false
+        ? []
+        : ["status-click", "open-session", "start-session-plain"]),
     ],
     secrets: {
       get: async (key) => secrets.get(key) ?? null,
@@ -385,6 +417,8 @@ export function fakeApi(
         void fake.viewShown.push({ sessionId, viewId, params }),
     });
   }
+  if (options.click !== undefined && options.click !== false)
+    addClickCalls(api, fake, options.click);
   if (options.media === true) {
     api.panelMedia = (panelId, folder) => void fake.mediaFolders.push({ panelId, folder });
   }

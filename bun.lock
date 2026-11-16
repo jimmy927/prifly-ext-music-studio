@@ -6,7 +6,7 @@
       "name": "prifly-ext-music-studio",
       "devDependencies": {
         "@biomejs/biome": "^2.5.14",
-        "@prifly/extension-api": "git+ssh://git@github.com/jimmy927/prifly-extension-api.git#0cb42a605584c56057982dd3388bf8e96dbc06b7",
+        "@prifly/extension-api": "git+ssh://git@github.com/jimmy927/prifly-extension-api.git#cc8a2f20f1b64c6fe1a519909a38ecdb5ed9c1a1",
         "@types/bun": "^1.1.14",
         "typescript": "^7.0.2",
       },
@@ -35,7 +35,7 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.6.6", "", { "os": "win32", "cpu": "x64" }, "sha512-B7KMG26A4I9lAuxwBGMmiVcjMGAeJRoz+pzFt9brRvOAsIrgOu8ptJld5rUWui6tM1uiJwxeJhhDPuAiZtxXdw=="],
 
-    "@prifly/extension-api": ["@prifly/extension-api@git+ssh://git@github.com/jimmy927/prifly-extension-api.git#0cb42a605584c56057982dd3388bf8e96dbc06b7", {}, "0cb42a605584c56057982dd3388bf8e96dbc06b7"],
+    "@prifly/extension-api": ["@prifly/extension-api@git+ssh://git@github.com/jimmy927/prifly-extension-api.git#cc8a2f20f1b64c6fe1a519909a38ecdb5ed9c1a1", {}, "cc8a2f20f1b64c6fe1a519909a38ecdb5ed9c1a1"],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 
