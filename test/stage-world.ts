@@ -128,9 +128,9 @@ export const ask = (
   body: unknown = null,
 ) => route(w.studio, { path, query: { session: "docked-session", ...query }, body });
 
-/** Waits until the job is no longer running. */
-export async function finished(w: World, id: string): Promise<Job> {
-  for (let tries = 0; tries < 1500; tries += 1) {
+/** Waits until the job is no longer running; by the clock, so a busy machine's slow ffmpeg is not a failure. */
+export async function finished(w: World, id: string, waitMs = 90_000): Promise<Job> {
+  for (const until = Date.now() + waitMs; Date.now() < until; ) {
     const job = (await ask(w, "job", { id })) as Job;
     if (job.status !== "running") return job;
     await Bun.sleep(5);

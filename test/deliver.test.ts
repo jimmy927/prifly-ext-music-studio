@@ -96,7 +96,8 @@ test("Deliver writes stems named tempo, key, stem, the tagged master, rekordbox 
   expect(loops.loop.bars).toBe(1);
   expect(loops.loop.endSec).toBeGreaterThan(loops.loop.startSec);
   expect(existsSync(join(dir, "deliver", loops.file))).toBe(true);
-});
+  // Real ffmpeg on 30 s of audio: give a loaded machine room.
+}, 120_000);
 
 test("a WAV master carries no BPM tag from ffmpeg 4.2 and says so", async () => {
   const w = dj();
