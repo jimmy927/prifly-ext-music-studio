@@ -11,7 +11,16 @@
  */
 
 /** The Gemini model that looks at the pictures, frames and audio and writes the song and video ideas. */
-export const ANALYSIS_MODEL = "gemini-3.1-flash";
+export const ANALYSIS_MODEL = "gemini-3.8-flash";
+
+/** Ids the reader's key lists (checked 2026-11-16); the model above must be one of them. */
+export const KNOWN_ANALYSIS_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
+  "gemini-3.5-flash",
+  "gemini-flash-latest",
+  "gemini-3.1-pro-preview",
+] as const;
 
 export const IMAGE_EXTS = ["png", "jpg", "jpeg", "webp"] as const;
 export const VIDEO_EXTS = ["mp4", "mov", "m4v", "webm", "mkv", "avi"] as const;

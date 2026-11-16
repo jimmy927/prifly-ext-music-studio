@@ -11,7 +11,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readSources } from "../project/sources";
 import { readTreatment } from "../project/video";
-import { ANALYSIS_MODEL, MAX_FRAMES, MAX_SOURCES } from "../sources/constants";
+import {
+  ANALYSIS_MODEL,
+  KNOWN_ANALYSIS_MODELS,
+  MAX_FRAMES,
+  MAX_SOURCES,
+} from "../sources/constants";
 import { expandSources } from "../sources/files";
 import { audioArgv, durationFrom, frameArgv, samplingOf } from "../sources/frames";
 import { mergeBrief, pickCast } from "../sources/merge";
@@ -22,6 +27,11 @@ import { PNG, prepare } from "./video-world";
 
 const eleven = (w: { calls: { url: string; body: string }[] }) =>
   w.calls.filter((each) => each.url.endsWith("/v1/music/detailed"));
+
+test("the analysis model is one of the ids known to exist for the key", () => {
+  expect(KNOWN_ANALYSIS_MODELS as readonly string[]).toContain(ANALYSIS_MODEL);
+  expect(ANALYSIS_MODEL).not.toBe("gemini-3.1-flash");
+});
 
 test("a folder expands to its pictures and videos by name; other files, hidden files and subfolders are left out", async () => {
   const folder = await album(2, true);
