@@ -1,5 +1,9 @@
 # Music Studio for prifly
 
+![The Music Studio beside a prifly chat: a brief for a synthwave song on the left, three playable sketches on the right with one marked as chosen](docs/screenshot.png)
+
+_The Idea stage: a brief on the left, three 30-second sketches to play and choose from on the right (invented song and numbers)._
+
 Take a song idea to three 30-second sketches with ElevenLabs Music v2.5 or Lyria 3 Clip, keep them in a library, and (in later versions) arrange, mix, master and film it.
 
 This is slice 1: the foundation and the Idea stage.
